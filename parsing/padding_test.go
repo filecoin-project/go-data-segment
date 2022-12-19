@@ -3,6 +3,7 @@ package parsing
 import (
 	"github.com/filecoin-project/go-data-segment/types"
 	"github.com/stretchr/testify/assert"
+	"math/rand"
 	"testing"
 )
 
@@ -180,6 +181,51 @@ func TestUnpadSunshine(t *testing.T) {
 	assert.Equal(t, unpaddedData[2*types.BytesUsedInFP32-1], byte(0b10100101))
 	assert.Equal(t, unpaddedData[2*types.BytesUsedInFP32], byte(0b11111010))
 	assert.Equal(t, unpaddedData[3*types.BytesUsedInFP32-1], byte(0b00000001))
+}
+
+func TestPadAndUnpad(t *testing.T) {
+	// Soak test with random data for all possible bitlenths of FP32
+	for testAmount := 1001; testAmount < 1001+types.BitsUsedInFP32+1; testAmount++ {
+		randomBytes := make([]byte, 1001)
+		rand.Seed(int64(testAmount))
+		rand.Read(randomBytes)
+
+		paddedData, err := Pad(randomBytes)
+		assert.Equal(t, nil, err)
+		unpaddedData, err := Unpad(paddedData)
+		assert.Equal(t, nil, err)
+		assert.Equal(t, randomBytes, unpaddedData[:1001])
+		// Check that unpadded data uses everything in the FP32 encoding, even those bytes that have resulted in 0 bytes from encoding a weird length paddedData object
+		assert.Equal(t,
+			IntegerCeil(types.BitsUsedInFP32*IntegerCeil(1001*8, types.BitsUsedInFP32), 8),
+			len(unpaddedData))
+	}
+}
+
+/**
+ *  NEGATIVE TESTS
+ */
+
+func TestNilInputPad(t *testing.T) {
+	_, err := Pad(nil)
+	assert.NotNil(t, err)
+}
+
+func TestNilInputUnpad(t *testing.T) {
+	_, err := Unpad(nil)
+	assert.NotNil(t, err)
+}
+
+func TestEmptyInputPad(t *testing.T) {
+	var input [0]byte
+	_, err := Pad(input[:])
+	assert.NotNil(t, err)
+}
+
+func TestEmptyInputUnpad(t *testing.T) {
+	var input [0]types.FP32
+	_, err := Unpad(input[:])
+	assert.NotNil(t, err)
 }
 
 /**
