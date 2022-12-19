@@ -3,7 +3,6 @@ package parsing
 import (
 	"errors"
 	"github.com/filecoin-project/go-data-segment/types"
-	"math"
 )
 
 // Pad pads a general byte array in to FP32 chunks of bytes where the topmost bits of the most significant byte are 0
@@ -12,7 +11,7 @@ func Pad(unpaddedData []byte) ([]types.FP32, error) {
 		return nil, errors.New("empty input")
 	}
 	// Compute amount of FP32 elements in the result
-	amountOfFP32s := int(math.Ceil(float64(len(unpaddedData)*8) / float64(types.BitsUsedInFP32)))
+	amountOfFP32s := integerCeil(len(unpaddedData)*8, types.BitsUsedInFP32)
 	paddedData := make([]types.FP32, amountOfFP32s, amountOfFP32s)
 	currentPadBitIdx := 0
 	for i := 0; i < amountOfFP32s; i++ {
@@ -54,4 +53,56 @@ func retrieveNextFP32Byte(currentPadBitIdx int, currentUnpaddedSlice []byte) [ty
 	// Ensure the upper bits are set to 0
 	paddedBytes[types.BytesUsedInFP32-1] &= 0b00111111
 	return paddedBytes
+}
+
+func Unpad(paddedData []types.FP32) ([]byte, error) {
+	if paddedData == nil || len(paddedData) == 0 {
+		return nil, errors.New("empty input")
+	}
+	// Compute amount of bytes in the result
+	amountOfBytes := integerCeil(len(paddedData)*types.BitsUsedInFP32, 8)
+	unpaddedData := make([]byte, amountOfBytes, amountOfBytes)
+	currentPadBitIdx := 0
+	for i := 0; i < len(paddedData); i++ {
+		currentPaddedSlice := paddedData[i].Data
+		setUnpaddedData(&unpaddedData, currentPaddedSlice, currentPadBitIdx)
+		// Update currentPadBitIdx to the byte we need to start at which is 254 in
+		currentPadBitIdx += types.BitsUsedInFP32
+	}
+	return unpaddedData, nil
+}
+
+func setUnpaddedData(unpaddedData *[]byte, FP32Data [types.BytesUsedInFP32]byte, bitOffset int) {
+	bytePos := bitOffset / 8
+	shift := bitOffset % 8
+	for j := 0; j < types.BytesUsedInFP32-1; j++ {
+		/*
+			Shift the padded bytes appropriately and XO this into the current unpadded byte to ensure that the previous
+			bits in this byte does not get modified, but the new bytes get contained
+		*/
+		(*unpaddedData)[bytePos+j] ^= FP32Data[j] << shift
+		// Set the extra bits of the current padded byte, which it is no space for in the current unpadded byte, into the next byte
+		if bytePos+j+1 < len(*unpaddedData) {
+			(*unpaddedData)[bytePos+j+1] ^= FP32Data[j] >> (8 - shift)
+		}
+	}
+	// Ensure the two most significant bits are 0
+	mostSignificantByte := FP32Data[types.BytesUsedInFP32-1] & 0b00111111
+	(*unpaddedData)[bytePos+types.BytesUsedInFP32-1] ^= mostSignificantByte << shift
+	if shift > 0 {
+		(*unpaddedData)[bytePos+types.BytesUsedInFP32] ^= mostSignificantByte >> (8 - shift)
+	}
+}
+
+func integerCeil(x int, y int) int {
+	if x == 0 {
+		return 0
+	}
+	return 1 + ((abs(x) - 1) / abs(y))
+}
+func abs(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
 }

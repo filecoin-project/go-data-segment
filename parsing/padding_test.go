@@ -128,12 +128,66 @@ func TestRetrieveNextFP32ByteOverflow(t *testing.T) {
 	assert.Equal(t, expected, retrievedBytes)
 }
 
+func TestSetUnpaddedDataSunshine(t *testing.T) {
+	unpaddedData := make([]byte, 100)
+	var paddedData [types.BytesUsedInFP32]byte
+	set1s(&paddedData, 0, types.BytesUsedInFP32)
+	paddedData[0] = 0b11111110
+	// Notice the two most significant bits are 1 and should be ignored
+	paddedData[types.BytesUsedInFP32-1] = 0b11011111
+
+	setUnpaddedData(&unpaddedData, paddedData, 8)
+
+	for i := 0; i < types.BytesUsedInFP32-1; i++ {
+		assert.Equal(t, unpaddedData[i+1], paddedData[i])
+	}
+	assert.Equal(t, byte(0b00011111), unpaddedData[types.BytesUsedInFP32])
+}
+
+func TestSetUnpaddedDataMiddle(t *testing.T) {
+	unpaddedData := make([]byte, 100)
+	var paddedData [types.BytesUsedInFP32]byte
+	set1s(&paddedData, 0, types.BytesUsedInFP32)
+	paddedData[0] = 0b11111101
+	// Notice the two most significant bits are 1 and should be ignored
+	paddedData[types.BytesUsedInFP32-1] = 0b00111111
+
+	setUnpaddedData(&unpaddedData, paddedData, 19)
+
+	expected := make([]byte, 100)
+	set1s(&expected, 19/8, 19/8+types.BytesUsedInFP32)
+	expected[19/8] = 0b11101000
+	expected[19/8+types.BytesUsedInFP32] = 0b00000001
+	assert.Equal(t, expected, unpaddedData)
+}
+
+func TestUnpadSunshine(t *testing.T) {
+	paddedData := make([]types.FP32, 3)
+	data := make([]byte, types.BytesUsedInFP32)
+	set1s(&data, 0, types.BytesUsedInFP32)
+	data[0] = 0b10101010
+	data[types.BytesUsedInFP32-1] = 0b00010101
+	copy(paddedData[0].Data[:], data)
+	copy(paddedData[1].Data[:], data)
+	copy(paddedData[2].Data[:], data)
+
+	unpaddedData, err := Unpad(paddedData)
+	assert.Equal(t, nil, err)
+	assert.Equal(t, unpaddedData[0], byte(0b10101010))
+	assert.Equal(t, unpaddedData[1], byte(0b11111111))
+	assert.Equal(t, unpaddedData[types.BytesUsedInFP32-1], byte(0b10010101))
+	assert.Equal(t, unpaddedData[types.BytesUsedInFP32], byte(0b11101010))
+	assert.Equal(t, unpaddedData[2*types.BytesUsedInFP32-1], byte(0b10100101))
+	assert.Equal(t, unpaddedData[2*types.BytesUsedInFP32], byte(0b11111010))
+	assert.Equal(t, unpaddedData[3*types.BytesUsedInFP32-1], byte(0b00000001))
+}
+
 /**
  *	HELPER FUNCTIONS
  */
 
-func set1s[ARRAY types.FP32Array](input *ARRAY, startInclude int, stopExclusive int) {
-	for i := startInclude; i < stopExclusive; i++ {
+func set1s[ARRAY types.FP32Array](input *ARRAY, startIncludeByte int, stopExclusiveByte int) {
+	for i := startIncludeByte; i < stopExclusiveByte; i++ {
 		(*input)[i] = 0b11111111
 	}
 }
