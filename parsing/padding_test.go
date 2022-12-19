@@ -7,6 +7,27 @@ import (
 	"testing"
 )
 
+// INTEGRATION TESTS
+
+func TestPadAndUnpad(t *testing.T) {
+	// Soak test with random data for all possible bitlengths of FP32
+	for testAmount := 1001; testAmount < 1001+types.BitsUsedInFP32+1; testAmount++ {
+		randomBytes := make([]byte, 1001)
+		rand.Seed(int64(testAmount))
+		rand.Read(randomBytes)
+
+		paddedData, err := Pad(&randomBytes)
+		assert.Equal(t, nil, err)
+		unpaddedData, err := Unpad(paddedData)
+		assert.Equal(t, nil, err)
+		assert.Equal(t, randomBytes, unpaddedData[:1001])
+		// Check that unpadded data uses everything in the FP32 encoding, even those bytes that have resulted in 0 bytes from encoding a weird length paddedData object
+		assert.Equal(t,
+			IntegerCeil(types.BitsUsedInFP32*IntegerCeil(1001*8, types.BitsUsedInFP32), 8),
+			len(unpaddedData))
+	}
+}
+
 // PUBLIC METHODS TESTS
 func TestPadSunshine(t *testing.T) {
 	size := 2*types.BytesUsedInFP32 + 5
@@ -17,7 +38,7 @@ func TestPadSunshine(t *testing.T) {
 	// Set 0 at the edge to test edge case
 	unpaddedData[size-1] = 0b00000011
 
-	res, err := Pad(unpaddedData[:])
+	res, err := Pad(&unpaddedData)
 	assert.Equal(t, nil, err)
 	var firstData [types.BytesUsedInFP32]byte
 	set1s(&firstData, 0, types.BytesUsedInFP32)
@@ -35,17 +56,38 @@ func TestPadSunshine(t *testing.T) {
 	assert.Equal(t, []types.FP32{{Data: firstData}, {Data: secondData}, {Data: thirdData}}, res)
 }
 
+func TestUnpadSunshine(t *testing.T) {
+	paddedData := make([]types.FP32, 3)
+	data := make([]byte, types.BytesUsedInFP32)
+	set1s(&data, 0, types.BytesUsedInFP32)
+	data[0] = 0b10101010
+	data[types.BytesUsedInFP32-1] = 0b00010101
+	copy(paddedData[0].Data[:], data)
+	copy(paddedData[1].Data[:], data)
+	copy(paddedData[2].Data[:], data)
+
+	unpaddedData, err := Unpad(paddedData)
+	assert.Equal(t, nil, err)
+	assert.Equal(t, unpaddedData[0], byte(0b10101010))
+	assert.Equal(t, unpaddedData[1], byte(0b11111111))
+	assert.Equal(t, unpaddedData[types.BytesUsedInFP32-1], byte(0b10010101))
+	assert.Equal(t, unpaddedData[types.BytesUsedInFP32], byte(0b11101010))
+	assert.Equal(t, unpaddedData[2*types.BytesUsedInFP32-1], byte(0b10100101))
+	assert.Equal(t, unpaddedData[2*types.BytesUsedInFP32], byte(0b11111010))
+	assert.Equal(t, unpaddedData[3*types.BytesUsedInFP32-1], byte(0b00000001))
+}
+
 // PRIVATE METHOD TESTS
 func TestNextUnpaddedSliceSunshine(t *testing.T) {
 	unpaddedData := getMonotoneTestData(40)
-	nextSlice := getNextUnpaddedSlice(0, unpaddedData)
+	nextSlice := getNextUnpaddedSlice(0, &unpaddedData)
 	expected := unpaddedData[:33]
 	assert.Equal(t, expected, nextSlice)
 }
 
 func TestNextUnpaddedSliceSunshine2(t *testing.T) {
 	unpaddedData := getMonotoneTestData(40)
-	nextSlice := getNextUnpaddedSlice(8, unpaddedData)
+	nextSlice := getNextUnpaddedSlice(8, &unpaddedData)
 	expected := unpaddedData[1:34]
 	assert.Equal(t, expected, nextSlice)
 }
@@ -53,7 +95,7 @@ func TestNextUnpaddedSliceSunshine2(t *testing.T) {
 func TestNextUnpaddedSliceMiddleOffset(t *testing.T) {
 	unpaddedData := getMonotoneTestData(40)
 	// 30/8 = 3.75
-	nextSlice := getNextUnpaddedSlice(30, unpaddedData)
+	nextSlice := getNextUnpaddedSlice(30, &unpaddedData)
 	expected := unpaddedData[3:36]
 	assert.Equal(t, expected, nextSlice)
 }
@@ -61,21 +103,21 @@ func TestNextUnpaddedSliceMiddleOffset(t *testing.T) {
 func TestNextUnpaddedSliceOverflow(t *testing.T) {
 	unpaddedData := getMonotoneTestData(40)
 	// 65/8 = 8.125
-	nextSlice := getNextUnpaddedSlice(65, unpaddedData)
+	nextSlice := getNextUnpaddedSlice(65, &unpaddedData)
 	expected := unpaddedData[8:40]
 	assert.Equal(t, expected, nextSlice)
 }
 
 func TestNextUnpaddedSliceEmpty(t *testing.T) {
 	unpaddedData := []byte{}
-	nextSlice := getNextUnpaddedSlice(0, unpaddedData)
+	nextSlice := getNextUnpaddedSlice(0, &unpaddedData)
 	assert.Equal(t, []byte{}, nextSlice)
 }
 
 func TestRetrieveNextFP32ByteSunshine(t *testing.T) {
 	nextSlice := getMonotoneTestData(32)
 
-	retrievedBytes := retrieveNextFP32Byte(0, nextSlice)
+	retrievedBytes := retrieveNextFP32(0, nextSlice)
 
 	assert.Equal(t, []byte(nextSlice), retrievedBytes[:])
 }
@@ -88,7 +130,7 @@ func TestRetrieveNextFP32ByteMiddle(t *testing.T) {
 	// Set 0 at the edge to test edge case
 	nextSlice[types.BytesUsedInFP32] = 0b00000011
 
-	retrievedBytes := retrieveNextFP32Byte(2, nextSlice)
+	retrievedBytes := retrieveNextFP32(2, nextSlice)
 
 	expected := make([]byte, types.BytesUsedInFP32)
 	set1s(&expected, 0, types.BytesUsedInFP32)
@@ -107,7 +149,7 @@ func TestRetrieveNextFP32ByteMiddle2(t *testing.T) {
 	nextSlice[types.BytesUsedInFP32] = 0b11111110
 
 	// Add an arbitrary product of 8 to ensure that overflow gets found correctly
-	retrievedBytes := retrieveNextFP32Byte(8*100+3, nextSlice)
+	retrievedBytes := retrieveNextFP32(8*100+3, nextSlice)
 
 	expected := make([]byte, types.BytesUsedInFP32)
 	set1s(&expected, 0, types.BytesUsedInFP32)
@@ -121,7 +163,7 @@ func TestRetrieveNextFP32ByteOverflow(t *testing.T) {
 	nextSlice := []byte{0b11111111, 0b10000000}
 
 	// Add an arbitrary product of 8 to ensure that overflow gets found correctly
-	retrievedBytes := retrieveNextFP32Byte(8*1000+4, nextSlice)
+	retrievedBytes := retrieveNextFP32(8*1000+4, nextSlice)
 
 	var expected [types.BytesUsedInFP32]byte
 	expected[0] = 0b00001111
@@ -162,46 +204,6 @@ func TestSetUnpaddedDataMiddle(t *testing.T) {
 	assert.Equal(t, expected, unpaddedData)
 }
 
-func TestUnpadSunshine(t *testing.T) {
-	paddedData := make([]types.FP32, 3)
-	data := make([]byte, types.BytesUsedInFP32)
-	set1s(&data, 0, types.BytesUsedInFP32)
-	data[0] = 0b10101010
-	data[types.BytesUsedInFP32-1] = 0b00010101
-	copy(paddedData[0].Data[:], data)
-	copy(paddedData[1].Data[:], data)
-	copy(paddedData[2].Data[:], data)
-
-	unpaddedData, err := Unpad(paddedData)
-	assert.Equal(t, nil, err)
-	assert.Equal(t, unpaddedData[0], byte(0b10101010))
-	assert.Equal(t, unpaddedData[1], byte(0b11111111))
-	assert.Equal(t, unpaddedData[types.BytesUsedInFP32-1], byte(0b10010101))
-	assert.Equal(t, unpaddedData[types.BytesUsedInFP32], byte(0b11101010))
-	assert.Equal(t, unpaddedData[2*types.BytesUsedInFP32-1], byte(0b10100101))
-	assert.Equal(t, unpaddedData[2*types.BytesUsedInFP32], byte(0b11111010))
-	assert.Equal(t, unpaddedData[3*types.BytesUsedInFP32-1], byte(0b00000001))
-}
-
-func TestPadAndUnpad(t *testing.T) {
-	// Soak test with random data for all possible bitlenths of FP32
-	for testAmount := 1001; testAmount < 1001+types.BitsUsedInFP32+1; testAmount++ {
-		randomBytes := make([]byte, 1001)
-		rand.Seed(int64(testAmount))
-		rand.Read(randomBytes)
-
-		paddedData, err := Pad(randomBytes)
-		assert.Equal(t, nil, err)
-		unpaddedData, err := Unpad(paddedData)
-		assert.Equal(t, nil, err)
-		assert.Equal(t, randomBytes, unpaddedData[:1001])
-		// Check that unpadded data uses everything in the FP32 encoding, even those bytes that have resulted in 0 bytes from encoding a weird length paddedData object
-		assert.Equal(t,
-			IntegerCeil(types.BitsUsedInFP32*IntegerCeil(1001*8, types.BitsUsedInFP32), 8),
-			len(unpaddedData))
-	}
-}
-
 /**
  *  NEGATIVE TESTS
  */
@@ -217,8 +219,8 @@ func TestNilInputUnpad(t *testing.T) {
 }
 
 func TestEmptyInputPad(t *testing.T) {
-	var input [0]byte
-	_, err := Pad(input[:])
+	input := make([]byte, 0)
+	_, err := Pad(&input)
 	assert.NotNil(t, err)
 }
 
