@@ -6,12 +6,12 @@ import (
 )
 
 // Pad pads a general byte array in to Fr32 chunks of bytes where the topmost bits of the most significant byte are 0
-func Pad(unpaddedData *[]byte) ([]fr32.Fr32, error) {
-	if unpaddedData == nil || len(*unpaddedData) == 0 {
+func Pad(unpaddedData []byte) ([]fr32.Fr32, error) {
+	if unpaddedData == nil || len(unpaddedData) == 0 {
 		return nil, errors.New("empty input")
 	}
 	// Compute amount of Fr32 elements in the result
-	chunkCount := Ceil(len(*unpaddedData)*8, fr32.BitsNeeded)
+	chunkCount := Ceil(len(unpaddedData)*8, fr32.BitsNeeded)
 	paddedData := make([]fr32.Fr32, chunkCount, chunkCount)
 	bitIdx := 0
 	for i := 0; i < chunkCount; i++ {
@@ -24,15 +24,15 @@ func Pad(unpaddedData *[]byte) ([]fr32.Fr32, error) {
 }
 
 // Return a chunk containing the next segment of unpadded data (without copying data), it will be a chunk of either 32 or 33 bytes
-func getChunk(bitIdx int, unpaddedData *[]byte) []byte {
+func getChunk(bitIdx int, unpaddedData []byte) []byte {
 	var upperIdx int
 	// Find the largest byte we can access in the unpadded array, in case we are in the end of the array
-	if (bitIdx/8)+fr32.BytesNeeded+1 < len(*unpaddedData) {
+	if (bitIdx/8)+fr32.BytesNeeded+1 < len(unpaddedData) {
 		upperIdx = (bitIdx / 8) + fr32.BytesNeeded + 1
 	} else {
-		upperIdx = len(*unpaddedData)
+		upperIdx = len(unpaddedData)
 	}
-	return (*unpaddedData)[bitIdx/8 : upperIdx]
+	return unpaddedData[bitIdx/8 : upperIdx]
 }
 
 // Takes an arbitrary bit index, bitIdx and a chunk of sufficient unpadded bytes to construct a Fr32 chunk
@@ -66,7 +66,7 @@ func Unpad(paddedData []fr32.Fr32) ([]byte, error) {
 	bitIdx := 0
 	for i := 0; i < len(paddedData); i++ {
 		chunk := paddedData[i].Data
-		setChunk(&unpaddedData, chunk, bitIdx)
+		setChunk(unpaddedData, chunk, bitIdx)
 		// Update bitIdx to the byte we need to start at which is 254 in
 		bitIdx += fr32.BitsNeeded
 	}
@@ -74,7 +74,7 @@ func Unpad(paddedData []fr32.Fr32) ([]byte, error) {
 }
 
 // setChunk sets the bits of fr32Data in the byte array unpaddedData, starting from bitOffset
-func setChunk(unpaddedData *[]byte, fr32Data [fr32.BytesNeeded]byte, bitOffset int) {
+func setChunk(unpaddedData []byte, fr32Data [fr32.BytesNeeded]byte, bitOffset int) {
 	bytePos := bitOffset / 8
 	shift := bitOffset % 8
 	for j := 0; j < fr32.BytesNeeded-1; j++ {
@@ -82,18 +82,18 @@ func setChunk(unpaddedData *[]byte, fr32Data [fr32.BytesNeeded]byte, bitOffset i
 			Shift the padded bytes appropriately and XOR this into the current unpadded byte to ensure that the previous
 			bits in this byte does not get modified, but the new bytes get contained
 		*/
-		(*unpaddedData)[bytePos+j] ^= fr32Data[j] << shift
+		unpaddedData[bytePos+j] ^= fr32Data[j] << shift
 		// Set the extra bits of the current padded byte, which it is no space for in the current unpadded byte, into the next byte
-		if bytePos+j+1 < len(*unpaddedData) {
-			(*unpaddedData)[bytePos+j+1] ^= fr32Data[j] >> (8 - shift)
+		if bytePos+j+1 < len(unpaddedData) {
+			unpaddedData[bytePos+j+1] ^= fr32Data[j] >> (8 - shift)
 		}
 	}
 	// Ensure the two most significant bits are 0 of the last byte
 	lastByte := fr32Data[fr32.BytesNeeded-1] & 0b00111111
-	(*unpaddedData)[bytePos+fr32.BytesNeeded-1] ^= lastByte << shift
+	unpaddedData[bytePos+fr32.BytesNeeded-1] ^= lastByte << shift
 	// Check if the shift indicates that there are more bytes to process and add to the next byte
 	if shift > 2 {
-		(*unpaddedData)[bytePos+fr32.BytesNeeded] ^= lastByte >> (8 - shift)
+		unpaddedData[bytePos+fr32.BytesNeeded] ^= lastByte >> (8 - shift)
 	}
 }
 

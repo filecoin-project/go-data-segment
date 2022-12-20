@@ -16,7 +16,7 @@ func TestPadAndUnpad(t *testing.T) {
 		rand.Seed(int64(amount))
 		rand.Read(randomBytes)
 
-		paddedData, err := Pad(&randomBytes)
+		paddedData, err := Pad(randomBytes)
 		assert.Equal(t, nil, err)
 		unpaddedData, err := Unpad(paddedData)
 		assert.Equal(t, nil, err)
@@ -38,7 +38,7 @@ func TestPadSunshine(t *testing.T) {
 	// Set 0 at the edge to test edge case
 	unpaddedData[size-1] = 0b00000011
 
-	res, err := Pad(&unpaddedData)
+	res, err := Pad(unpaddedData)
 	assert.Equal(t, nil, err)
 	var firstData [fr32.BytesNeeded]byte
 	set1s(&firstData, 0, fr32.BytesNeeded)
@@ -80,14 +80,14 @@ func TestUnpadSunshine(t *testing.T) {
 // PRIVATE METHOD TESTS
 func TestGetChunkSunshine(t *testing.T) {
 	unpaddedData := getMonotoneTestData(40)
-	nextChunk := getChunk(0, &unpaddedData)
+	nextChunk := getChunk(0, unpaddedData)
 	expected := unpaddedData[:33]
 	assert.Equal(t, expected, nextChunk)
 }
 
 func TestGetChunk2(t *testing.T) {
 	unpaddedData := getMonotoneTestData(40)
-	nextChunk := getChunk(8, &unpaddedData)
+	nextChunk := getChunk(8, unpaddedData)
 	expected := unpaddedData[1:34]
 	assert.Equal(t, expected, nextChunk)
 }
@@ -95,7 +95,7 @@ func TestGetChunk2(t *testing.T) {
 func TestGetChunkMiddleOffset(t *testing.T) {
 	unpaddedData := getMonotoneTestData(40)
 	// 30/8 = 3.75
-	nextChunk := getChunk(30, &unpaddedData)
+	nextChunk := getChunk(30, unpaddedData)
 	expected := unpaddedData[3:36]
 	assert.Equal(t, expected, nextChunk)
 }
@@ -103,14 +103,14 @@ func TestGetChunkMiddleOffset(t *testing.T) {
 func TestGetChunkOverflow(t *testing.T) {
 	unpaddedData := getMonotoneTestData(40)
 	// 65/8 = 8.125
-	nextChunk := getChunk(65, &unpaddedData)
+	nextChunk := getChunk(65, unpaddedData)
 	expected := unpaddedData[8:40]
 	assert.Equal(t, expected, nextChunk)
 }
 
 func TestGetChunkEmpty(t *testing.T) {
 	unpaddedData := []byte{}
-	nextChunk := getChunk(0, &unpaddedData)
+	nextChunk := getChunk(0, unpaddedData)
 	assert.Equal(t, []byte{}, nextChunk)
 }
 
@@ -179,7 +179,7 @@ func TestSetChunkSunshine(t *testing.T) {
 	// Notice the two most significant bits are 1 and should be ignored
 	paddedData[fr32.BytesNeeded-1] = 0b11011111
 
-	setChunk(&unpaddedData, paddedData, 8)
+	setChunk(unpaddedData, paddedData, 8)
 
 	for i := 0; i < fr32.BytesNeeded-1; i++ {
 		assert.Equal(t, unpaddedData[i+1], paddedData[i])
@@ -195,7 +195,7 @@ func TestSetChunkMiddle(t *testing.T) {
 	// Notice the two most significant bits are 1 and should be ignored
 	paddedData[fr32.BytesNeeded-1] = 0b00111111
 
-	setChunk(&unpaddedData, paddedData, 19)
+	setChunk(unpaddedData, paddedData, 19)
 
 	expected := make([]byte, 100)
 	set1s(&expected, 19/8, 19/8+fr32.BytesNeeded)
@@ -220,7 +220,7 @@ func TestNilInputUnpad(t *testing.T) {
 
 func TestEmptyInputPad(t *testing.T) {
 	input := make([]byte, 0)
-	_, err := Pad(&input)
+	_, err := Pad(input)
 	assert.NotNil(t, err)
 }
 
