@@ -23,7 +23,7 @@ func Pad(unpaddedData *[]byte) ([]fr32.Fr32, error) {
 	return paddedData, nil
 }
 
-// Return a slice containing the next segment of unpadded data (without copying data), it will be a slice of either 32 or 33 bytes
+// Return a chunk containing the next segment of unpadded data (without copying data), it will be a chunk of either 32 or 33 bytes
 func getChunk(bitIdx int, unpaddedData *[]byte) []byte {
 	var upperIdx int
 	// Find the largest byte we can access in the unpadded array, in case we are in the end of the array
@@ -35,7 +35,7 @@ func getChunk(bitIdx int, unpaddedData *[]byte) []byte {
 	return (*unpaddedData)[bitIdx/8 : upperIdx]
 }
 
-// Takes an arbitrary bit index, bitIdx and a slice of sufficient unpadded bytes to construct a Fr32 chunk
+// Takes an arbitrary bit index, bitIdx and a chunk of sufficient unpadded bytes to construct a Fr32 chunk
 // Computes the bit offset from bitIdx % 8 and extracts the 254 bits unpaddedChunk and return these in a 32 byte list
 func shiftChunk(bitIdx int, unpaddedChunk []byte) [fr32.BytesNeeded]byte {
 	var paddedBytes [fr32.BytesNeeded]byte

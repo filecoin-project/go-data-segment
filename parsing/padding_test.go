@@ -80,57 +80,57 @@ func TestUnpadSunshine(t *testing.T) {
 // PRIVATE METHOD TESTS
 func TestGetChunkSunshine(t *testing.T) {
 	unpaddedData := getMonotoneTestData(40)
-	nextSlice := getChunk(0, &unpaddedData)
+	nextChunk := getChunk(0, &unpaddedData)
 	expected := unpaddedData[:33]
-	assert.Equal(t, expected, nextSlice)
+	assert.Equal(t, expected, nextChunk)
 }
 
 func TestGetChunk2(t *testing.T) {
 	unpaddedData := getMonotoneTestData(40)
-	nextSlice := getChunk(8, &unpaddedData)
+	nextChunk := getChunk(8, &unpaddedData)
 	expected := unpaddedData[1:34]
-	assert.Equal(t, expected, nextSlice)
+	assert.Equal(t, expected, nextChunk)
 }
 
 func TestGetChunkMiddleOffset(t *testing.T) {
 	unpaddedData := getMonotoneTestData(40)
 	// 30/8 = 3.75
-	nextSlice := getChunk(30, &unpaddedData)
+	nextChunk := getChunk(30, &unpaddedData)
 	expected := unpaddedData[3:36]
-	assert.Equal(t, expected, nextSlice)
+	assert.Equal(t, expected, nextChunk)
 }
 
 func TestGetChunkOverflow(t *testing.T) {
 	unpaddedData := getMonotoneTestData(40)
 	// 65/8 = 8.125
-	nextSlice := getChunk(65, &unpaddedData)
+	nextChunk := getChunk(65, &unpaddedData)
 	expected := unpaddedData[8:40]
-	assert.Equal(t, expected, nextSlice)
+	assert.Equal(t, expected, nextChunk)
 }
 
 func TestGetChunkEmpty(t *testing.T) {
 	unpaddedData := []byte{}
-	nextSlice := getChunk(0, &unpaddedData)
-	assert.Equal(t, []byte{}, nextSlice)
+	nextChunk := getChunk(0, &unpaddedData)
+	assert.Equal(t, []byte{}, nextChunk)
 }
 
 func TestShiftChunkSunshine(t *testing.T) {
-	nextSlice := getMonotoneTestData(32)
+	nextChunk := getMonotoneTestData(32)
 
-	retrievedBytes := shiftChunk(0, nextSlice)
+	retrievedBytes := shiftChunk(0, nextChunk)
 
-	assert.Equal(t, []byte(nextSlice), retrievedBytes[:])
+	assert.Equal(t, []byte(nextChunk), retrievedBytes[:])
 }
 
 func TestShiftChunkMiddle(t *testing.T) {
-	nextSlice := make([]byte, fr32.BytesNeeded+1)
+	nextChunk := make([]byte, fr32.BytesNeeded+1)
 	// Set 0 at the edge to test edge case
-	nextSlice[0] = 0b11111100
-	set1s(&nextSlice, 1, fr32.BytesNeeded)
+	nextChunk[0] = 0b11111100
+	set1s(&nextChunk, 1, fr32.BytesNeeded)
 	// Set 0 at the edge to test edge case
-	nextSlice[fr32.BytesNeeded] = 0b00000011
+	nextChunk[fr32.BytesNeeded] = 0b00000011
 
-	retrievedBytes := shiftChunk(2, nextSlice)
+	retrievedBytes := shiftChunk(2, nextChunk)
 
 	expected := make([]byte, fr32.BytesNeeded)
 	set1s(&expected, 0, fr32.BytesNeeded)
@@ -139,17 +139,17 @@ func TestShiftChunkMiddle(t *testing.T) {
 }
 
 func TestShiftChunkMiddle2(t *testing.T) {
-	nextSlice := make([]byte, fr32.BytesNeeded+1)
+	nextChunk := make([]byte, fr32.BytesNeeded+1)
 	// Set 0 at the edge to test edge case
-	nextSlice[0] = 0b11111000
-	set1s(&nextSlice, 1, fr32.BytesNeeded)
+	nextChunk[0] = 0b11111000
+	set1s(&nextChunk, 1, fr32.BytesNeeded)
 	// Set an arbitrary middle bit to 0
-	nextSlice[5] = 0b11111011
+	nextChunk[5] = 0b11111011
 	// Set 0 at the edge to test edge case
-	nextSlice[fr32.BytesNeeded] = 0b11111110
+	nextChunk[fr32.BytesNeeded] = 0b11111110
 
 	// Add an arbitrary product of 8 to ensure that overflow gets found correctly
-	retrievedBytes := shiftChunk(8*100+3, nextSlice)
+	retrievedBytes := shiftChunk(8*100+3, nextChunk)
 
 	expected := make([]byte, fr32.BytesNeeded)
 	set1s(&expected, 0, fr32.BytesNeeded)
@@ -160,10 +160,10 @@ func TestShiftChunkMiddle2(t *testing.T) {
 }
 
 func TestShiftChunkOverflow(t *testing.T) {
-	nextSlice := []byte{0b11111111, 0b10000000}
+	nextChunk := []byte{0b11111111, 0b10000000}
 
 	// Add an arbitrary product of 8 to ensure that overflow gets found correctly
-	retrievedBytes := shiftChunk(8*1000+4, nextSlice)
+	retrievedBytes := shiftChunk(8*1000+4, nextChunk)
 
 	var expected [fr32.BytesNeeded]byte
 	expected[0] = 0b00001111
