@@ -11,10 +11,10 @@ func Pad(unpaddedData *[]byte) ([]fr32.Fr32, error) {
 		return nil, errors.New("empty input")
 	}
 	// Compute amount of Fr32 elements in the result
-	amountChunks := Ceil(len(*unpaddedData)*8, fr32.BitsNeeded)
-	paddedData := make([]fr32.Fr32, amountChunks, amountChunks)
+	chunkCount := Ceil(len(*unpaddedData)*8, fr32.BitsNeeded)
+	paddedData := make([]fr32.Fr32, chunkCount, chunkCount)
 	bitIdx := 0
-	for i := 0; i < amountChunks; i++ {
+	for i := 0; i < chunkCount; i++ {
 		unpaddedChunk := getChunk(bitIdx, unpaddedData)
 		paddedData[i] = fr32.Fr32{Data: shiftChunk(bitIdx, unpaddedChunk)}
 		// Update bitIdx to the byte we need to start at which is 254 in
