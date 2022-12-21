@@ -65,6 +65,20 @@ func TestGrowTreeOdd(t *testing.T) {
 	assert.Equal(t, expectedRoot, tree.nodes[0][0].data[:])
 }
 
+func TestGrowTreeSoak(t *testing.T) {
+	singletonInput, err := hex.DecodeString("deadbeef")
+	assert.Nil(t, err)
+	for amount := 4; amount < 125; amount++ {
+		input := make([][]byte, amount)
+		for i := 0; i < amount; i++ {
+			input[i] = singletonInput
+		}
+		tree, err := GrowTree(input)
+		assert.Nil(t, err)
+		assert.Equal(t, 1+log2Ceil(amount), tree.depth())
+	}
+}
+
 // PRIVATE METHOD TESTS
 
 // TestTruncatedHash is tested against SHA256 test vector for the empty input
