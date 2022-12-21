@@ -34,6 +34,37 @@ func TestGrowTreeSunshine(t *testing.T) {
 	assert.Equal(t, expectedRoot, tree.nodes[0][0].data[:])
 }
 
+func TestGrowTreeOdd(t *testing.T) {
+	singletonInput, err := hex.DecodeString("de188941a3375d3a8a061e67576e926dc71a7fa3f0cceb97452b4d3227965f9ea8cc75076d9fb9c5417aa5cb30fc22198b34982dbb629e")
+	assert.Nil(t, err)
+	// Construct a tree with 3 leafs
+	input := [][]byte{singletonInput, singletonInput, singletonInput}
+
+	tree, err := GrowTree(input)
+	assert.Nil(t, err)
+
+	expectedLeaf, err := hex.DecodeString("038051e9c324393bd1ca1978dd0952c2aa3742ca4f1bd5cd4611cea83892d302")
+	assert.Nil(t, err)
+	expectedLeftMiddleNode, err := hex.DecodeString("90a4a4c485b44abecda2c404e4a56df371c9f7c6f23f396f4c63903acf65d638")
+	assert.Nil(t, err)
+	expectedRightMiddleNode, err := hex.DecodeString("f38494aa397bf51c8491d20d8e34249958b19e57db5c7d29676c897c7f3ddf13")
+	assert.Nil(t, err)
+	expectedRoot, err := hex.DecodeString("ea0e5293bdbc7e98142f57d1cc83ec00592acb23515043641322bcc99a03b20b")
+	assert.Nil(t, err)
+
+	assert.Equal(t, 3, tree.depth())
+	assert.Equal(t, 3, len(tree.nodes))
+	assert.Equal(t, 1, len(tree.nodes[0]))
+	assert.Equal(t, 2, len(tree.nodes[1]))
+	assert.Equal(t, 3, len(tree.nodes[2]))
+	assert.Equal(t, expectedLeaf, tree.nodes[2][0].data[:])
+	assert.Equal(t, expectedLeaf, tree.nodes[2][1].data[:])
+	assert.Equal(t, expectedLeaf, tree.nodes[2][2].data[:])
+	assert.Equal(t, expectedLeftMiddleNode, tree.nodes[1][0].data[:])
+	assert.Equal(t, expectedRightMiddleNode, tree.nodes[1][1].data[:])
+	assert.Equal(t, expectedRoot, tree.nodes[0][0].data[:])
+}
+
 // PRIVATE METHOD TESTS
 
 // TestTruncatedHash is tested against SHA256 test vector for the empty input

@@ -24,8 +24,10 @@ type Node struct {
 	data [digestBytes]byte
 }
 
+// depth returns the amount of levels in the tree, including the root level and leafs.
+// I.e. a tree with 3 leafs will have one leaf level, a middle level and a root, and hence depth 3.
 func (d MerkleTreeData) depth() int {
-	return log2Ceil(len(d.nodes))
+	return len(d.nodes)
 }
 
 func NewBareTree(elements int) MerkleTreeData {
@@ -50,11 +52,15 @@ func GrowTree(leafData [][]byte) (MerkleTreeData, error) {
 	// Construct the Merkle tree bottom-up, starting from the leafs
 	// Note the -1 due to 0-indexing the root level
 	for level := log2Ceil(len(leafLevel)) - 1; level >= 0; level-- {
-		currentLevel := make([]Node, len(preLevel)/2)
+		currentLevel := make([]Node, halfCeil(len(preLevel)))
 		// Traverse the level left to right
 		for i := 0; i+1 < len(preLevel); i = i + 2 {
-			// todo handle edge cases
 			currentLevel[i/2] = *computeNode(&preLevel[i], &preLevel[i+1])
+		}
+		// Handle the edge case where the tree is not complete, i.e. there is an odd number of leafs
+		// This is done by hashing the content of the node and letting it be its own parent
+		if len(preLevel)%2 == 1 {
+			currentLevel[halfCeil(len(preLevel))-1] = *truncatedHash(preLevel[len(preLevel)-1].data[:])
 		}
 		tree.nodes[level] = currentLevel
 		preLevel = currentLevel
@@ -82,6 +88,16 @@ func truncatedHash(data []byte) *Node {
 	digst[(256/8)-1] &= 0b00111111
 	node := Node{digst}
 	return &node
+}
+
+// Compute ceil(x/2)
+func halfCeil(x int) int {
+	if x%2 == 0 {
+		return x / 2
+	} else {
+		// Since the amount of levels is odd, we compute ceil(1+x/2)
+		return 1 + x/2
+	}
 }
 
 var tab64 = [6]uint64{
