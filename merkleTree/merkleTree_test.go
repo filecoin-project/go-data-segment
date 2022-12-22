@@ -26,12 +26,14 @@ func TestGrowTreeSunshine(t *testing.T) {
 	expectedRoot, err := hex.DecodeString("90a4a4c485b44abecda2c404e4a56df371c9f7c6f23f396f4c63903acf65d638")
 	assert.Nil(t, err)
 
+	assert.Equal(t, 2, tree.Depth())
+	assert.Equal(t, 2, tree.Leafs())
 	assert.Equal(t, 2, len(tree.nodes))
 	assert.Equal(t, 1, len(tree.nodes[0]))
 	assert.Equal(t, 2, len(tree.nodes[1]))
 	assert.Equal(t, expectedLeaf, tree.nodes[1][0].data[:])
 	assert.Equal(t, expectedLeaf, tree.nodes[1][1].data[:])
-	assert.Equal(t, expectedRoot, tree.nodes[0][0].data[:])
+	assert.Equal(t, expectedRoot, (*tree.GetRoot()).data[:])
 }
 
 func TestGrowTreeOdd(t *testing.T) {
@@ -52,7 +54,8 @@ func TestGrowTreeOdd(t *testing.T) {
 	expectedRoot, err := hex.DecodeString("ea0e5293bdbc7e98142f57d1cc83ec00592acb23515043641322bcc99a03b20b")
 	assert.Nil(t, err)
 
-	assert.Equal(t, 3, tree.depth())
+	assert.Equal(t, 3, tree.Depth())
+	assert.Equal(t, 3, tree.Leafs())
 	assert.Equal(t, 3, len(tree.nodes))
 	assert.Equal(t, 1, len(tree.nodes[0]))
 	assert.Equal(t, 2, len(tree.nodes[1]))
@@ -62,21 +65,28 @@ func TestGrowTreeOdd(t *testing.T) {
 	assert.Equal(t, expectedLeaf, tree.nodes[2][2].data[:])
 	assert.Equal(t, expectedLeftMiddleNode, tree.nodes[1][0].data[:])
 	assert.Equal(t, expectedRightMiddleNode, tree.nodes[1][1].data[:])
-	assert.Equal(t, expectedRoot, tree.nodes[0][0].data[:])
+	assert.Equal(t, expectedRoot, (*tree.GetRoot()).data[:])
 }
 
 func TestGrowTreeSoak(t *testing.T) {
-	singletonInput, err := hex.DecodeString("deadbeef")
-	assert.Nil(t, err)
 	for amount := 4; amount < 125; amount++ {
-		input := make([][]byte, amount)
-		for i := 0; i < amount; i++ {
-			input[i] = singletonInput
-		}
-		tree, err := GrowTree(input)
-		assert.Nil(t, err)
-		assert.Equal(t, 1+log2Ceil(amount), tree.depth())
+		tree := getTree(t, amount)
+
+		assert.Equal(t, 1+log2Ceil(amount), tree.Depth())
+		// Leafs should have "amount" elements
+		assert.Equal(t, amount, tree.Leafs())
 	}
+}
+
+func TestConstructProof(t *testing.T) {
+	tree := getTree(t, 130)
+
+	// Construct a proof of a leaf node
+	proof := tree.ConstructProof(tree.Depth()-1, 55)
+
+	assert.Equal(t, proof.lvl, log2Ceil(tree.Leafs()))
+	assert.Equal(t, proof.idx, 55)
+	assert.Equal(t, len(proof.path), tree.Depth()-1)
 }
 
 // PRIVATE METHOD TESTS
@@ -149,4 +159,17 @@ func TestLog2(t *testing.T) {
 	assert.Equal(t, 0, log2Ceil(1))
 	assert.Equal(t, 2, log2Ceil(4))
 	assert.Equal(t, 3, log2Ceil(7))
+}
+
+// HELPER METHODS
+func getTree(t *testing.T, leafs int) TreeData {
+	singletonInput, err := hex.DecodeString("deadbeef")
+	assert.Nil(t, err)
+	input := make([][]byte, leafs)
+	for i := 0; i < leafs; i++ {
+		input[i] = singletonInput
+	}
+	tree, err := GrowTree(input)
+	assert.Nil(t, err)
+	return tree
 }

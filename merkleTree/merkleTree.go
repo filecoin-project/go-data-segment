@@ -9,29 +9,61 @@ const digestBits = 254
 const digestBytes = 32
 
 type MerkleTree interface {
-	// Returns the depth of the tree. A single-node tree has depth 1
-	depth() int
+	// Depth returns the Depth of the tree. A single-node tree has Depth 1
+	Depth() int
+	// Leafs returns the amount of leafs in the Merkle tree
+	Leafs() int
+	// GetRoot returns the root node of the tree
+	GetRoot() *Node
+	// ConstructProof constructs a Merkle proof of the subtree (or leaf) at level lvl with index idx.
+	// level 0 is the root and index 0 is the left-most node in the level.
+	ConstructProof(lvl int, idx int) MerkleProof
+	// Validate checks that the Merkle tree is correctly constructed
+	Validate(leafData [][]byte) bool
 }
 
-type MerkleTreeData struct {
+type TreeData struct {
 	// nodes start from root and go down left-to-right
 	// thus len(nodes[0]) = 1, len(nodes[1]) = 2, etc.
 	nodes [][]Node
-	leafs int
 }
 
 type Node struct {
 	data [digestBytes]byte
 }
 
-// depth returns the amount of levels in the tree, including the root level and leafs.
-// I.e. a tree with 3 leafs will have one leaf level, a middle level and a root, and hence depth 3.
-func (d MerkleTreeData) depth() int {
+type MerkleProof interface {
+	// Validate ensures the correctness of the proof against the root of a Merkle tree
+	Validate(data []byte, tree MerkleTree) bool
+	// GetHashedData returns the digest of the data used in this proof
+	GetHashedData() Node
+}
+
+type ProofData struct {
+	path []Node
+	// lvl indicates the level in the Merkle tree where root has level 0
+	lvl int
+	// idx indicates the index within the level where the element whose membership to prove is located
+	// Leftmost node is index 0
+	idx int
+}
+
+// Depth returns the amount of levels in the tree, including the root level and leafs.
+// I.e. a tree with 3 leafs will have one leaf level, a middle level and a root, and hence Depth 3.
+func (d TreeData) Depth() int {
 	return len(d.nodes)
 }
 
-func NewBareTree(elements int) MerkleTreeData {
-	var tree MerkleTreeData
+func (d TreeData) Leafs() int {
+	return len(d.nodes[len(d.nodes)-1])
+}
+
+func (d TreeData) GetRoot() *Node {
+	return &d.nodes[0][0]
+}
+
+func NewBareTree(elements int) TreeData {
+	var tree TreeData
 	tree.nodes = make([][]Node, 1+log2Ceil(elements))
 	for i := 0; i <= log2Ceil(elements); i++ {
 		tree.nodes[i] = make([]Node, 1<<i)
@@ -39,8 +71,8 @@ func NewBareTree(elements int) MerkleTreeData {
 	return tree
 }
 
-func GrowTree(leafData [][]byte) (MerkleTreeData, error) {
-	var tree MerkleTreeData
+func GrowTree(leafData [][]byte) (TreeData, error) {
+	var tree TreeData
 	if leafData == nil || len(leafData) == 0 {
 		return tree, errors.New("empty input")
 	}
@@ -66,6 +98,54 @@ func GrowTree(leafData [][]byte) (MerkleTreeData, error) {
 		preLevel = currentLevel
 	}
 	return tree, nil
+}
+
+func (d TreeData) ConstructProof(lvl int, idx int) ProofData {
+	// The proof consists of appropriate siblings up to and including layer 1
+	// todo handle edge case of sibling in the leafs
+	proof := make([]Node, lvl)
+	currentIdx := idx
+	// Compute the node we wish to prove membership of to the root
+	for currentLvl := lvl; currentLvl >= 1; currentLvl-- {
+		proof[currentLvl-1] = d.nodes[currentLvl][getSiblingIdx(currentIdx)]
+		// Set next index to be the parent
+		currentIdx = currentIdx / 2
+	}
+	return ProofData{path: proof, lvl: lvl, idx: idx}
+}
+
+func (d ProofData) Validate(data []byte, tree TreeData) bool {
+	digest := truncatedHash(data)
+	currentDigest := digest
+	currentIdx := d.idx
+	for currentLvl := d.lvl; currentLvl >= 1; currentLvl-- {
+		sibIdx := getSiblingIdx(currentIdx)
+		sibling := tree.nodes[currentLvl][sibIdx]
+		var parent *Node
+		// If the sibling is "right" then we must hash currentDigest first
+		if sibIdx%2 == 1 {
+			parent = computeNode(currentDigest, &sibling)
+		} else {
+			parent = computeNode(&sibling, currentDigest)
+		}
+		if parent.data != tree.nodes[currentLvl-1][currentIdx/2].data {
+			return false
+		}
+		currentDigest = parent
+		currentIdx = currentIdx / 2
+	}
+	return true
+}
+
+// Returns the index of the sibling
+func getSiblingIdx(idx int) int {
+	if idx%2 == 0 {
+		// If the index is even, then the node to the right should be returned
+		return idx + 1
+	} else {
+		// Otherwise the node to the left should be returned
+		return idx - 1
+	}
 }
 
 func computeNode(left *Node, right *Node) *Node {
