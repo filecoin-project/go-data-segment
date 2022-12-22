@@ -164,6 +164,25 @@ func TestValidateSubtreeNegative(t *testing.T) {
 	}
 }
 
+func TestFailureGrowTree(t *testing.T) {
+	_, err := GrowTree(nil)
+	assert.NotNil(t, err)
+	_, err = GrowTree([][]byte{})
+	assert.NotNil(t, err)
+}
+
+func TestFailureConstructProof(t *testing.T) {
+	tree, _ := getTree(t, 20)
+	_, err := tree.ConstructProof(0, 0)
+	assert.NotNil(t, err)
+	_, err = tree.ConstructProof(10, 0)
+	assert.NotNil(t, err)
+	_, err = tree.ConstructProof(2, 20)
+	assert.NotNil(t, err)
+	_, err = tree.ConstructProof(2, -1)
+	assert.NotNil(t, err)
+}
+
 // PRIVATE METHOD TESTS
 
 // TestTruncatedHash is tested against SHA256 test vector for the empty input
