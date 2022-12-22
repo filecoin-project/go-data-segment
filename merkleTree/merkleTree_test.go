@@ -70,7 +70,7 @@ func TestGrowTreeOdd(t *testing.T) {
 
 func TestGrowTreeSoak(t *testing.T) {
 	for amount := 4; amount < 125; amount++ {
-		tree := getTree(t, amount)
+		tree, _ := getTree(t, amount)
 
 		assert.Equal(t, 1+log2Ceil(amount), tree.Depth())
 		// Leafs should have "amount" elements
@@ -79,7 +79,7 @@ func TestGrowTreeSoak(t *testing.T) {
 }
 
 func TestConstructProof(t *testing.T) {
-	tree := getTree(t, 130)
+	tree, _ := getTree(t, 130)
 
 	// Construct a proof of a leaf node
 	proof := tree.ConstructProof(tree.Depth()-1, 55)
@@ -87,6 +87,24 @@ func TestConstructProof(t *testing.T) {
 	assert.Equal(t, proof.lvl, log2Ceil(tree.Leafs()))
 	assert.Equal(t, proof.idx, 55)
 	assert.Equal(t, len(proof.path), tree.Depth()-1)
+}
+
+func TestValidateProofSunshine(t *testing.T) {
+	tree, leaf := getTree(t, 130)
+	// Construct a proof of a leaf node
+	proof := tree.ConstructProof(tree.Depth()-1, 55)
+
+	assert.True(t, proof.Validate(leaf, tree))
+}
+
+func TestValidateProofNegative(t *testing.T) {
+	tree, leaf := getTree(t, 266)
+	// Construct a proof of a leaf node
+	proof := tree.ConstructProof(tree.Depth()-1, 4)
+	// Corrupt a bit in a node
+	proof.path[3].data[0] ^= 1
+
+	assert.False(t, proof.Validate(leaf, tree))
 }
 
 // PRIVATE METHOD TESTS
@@ -162,7 +180,8 @@ func TestLog2(t *testing.T) {
 }
 
 // HELPER METHODS
-func getTree(t *testing.T, leafs int) TreeData {
+// Builds an arbitrary tree of equal leaf nodes and returns the tree and leaf nodes
+func getTree(t *testing.T, leafs int) (TreeData, []byte) {
 	singletonInput, err := hex.DecodeString("deadbeef")
 	assert.Nil(t, err)
 	input := make([][]byte, leafs)
@@ -171,5 +190,5 @@ func getTree(t *testing.T, leafs int) TreeData {
 	}
 	tree, err := GrowTree(input)
 	assert.Nil(t, err)
-	return tree
+	return tree, singletonInput
 }
