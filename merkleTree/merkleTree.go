@@ -118,21 +118,22 @@ func (d ProofData) Validate(data []byte, tree TreeData) bool {
 	digest := truncatedHash(data)
 	currentDigest := digest
 	currentIdx := d.idx
+	var parent *Node
 	for currentLvl := d.lvl; currentLvl >= 1; currentLvl-- {
 		sibIdx := getSiblingIdx(currentIdx)
-		sibling := tree.nodes[currentLvl][sibIdx]
-		var parent *Node
+		sibling := d.path[currentLvl-1] //tree.nodes[currentLvl][sibIdx]
 		// If the sibling is "right" then we must hash currentDigest first
 		if sibIdx%2 == 1 {
 			parent = computeNode(currentDigest, &sibling)
 		} else {
 			parent = computeNode(&sibling, currentDigest)
 		}
-		if parent.data != tree.nodes[currentLvl-1][currentIdx/2].data {
-			return false
-		}
 		currentDigest = parent
 		currentIdx = currentIdx / 2
+	}
+	// Validate the root against the tree
+	if parent.data != tree.GetRoot().data {
+		return false
 	}
 	return true
 }
