@@ -3,6 +3,7 @@ package merkleTree
 import (
 	"crypto/sha256"
 	"errors"
+	"log"
 )
 
 const digestBits = 254
@@ -33,8 +34,10 @@ type Node struct {
 }
 
 type MerkleProof interface {
-	// Validate ensures the correctness of the proof against the root of a Merkle tree
-	Validate(data []byte, tree MerkleTree) bool
+	// ValidateLeaf ensures the correctness of the proof of a leaf against the root of a Merkle tree
+	ValidateLeaf(data []byte, root *Node) bool
+	// ValidateSubtree ensures the correctness of the proof of a subtree against the root of a Merkle tree
+	ValidateSubtree(subtree *Node, root *Node) bool
 	// GetHashedData returns the digest of the data used in this proof
 	GetHashedData() Node
 }
@@ -46,6 +49,11 @@ type ProofData struct {
 	// idx indicates the index within the level where the element whose membership to prove is located
 	// Leftmost node is index 0
 	idx int
+}
+
+type BatchedMerkleProof interface {
+	// ValidateSequence ensures the correctness of the proof of a sequence of subtrees against the root of a Merkle tree
+	ValidateSequence(firstSubtree *Node, root *Node) bool
 }
 
 // Depth returns the amount of levels in the tree, including the root level and leafs.
@@ -100,39 +108,62 @@ func GrowTree(leafData [][]byte) (TreeData, error) {
 	return tree, nil
 }
 
-func (d TreeData) ConstructProof(lvl int, idx int) ProofData {
+func (d TreeData) ConstructProof(lvl int, idx int) (ProofData, error) {
+	if lvl < 1 || lvl >= d.Depth() {
+		log.Println("level is either below 1 or bigger than the tree supports")
+		return ProofData{}, errors.New("level is either below 1 or bigger than the tree supports")
+	}
 	// The proof consists of appropriate siblings up to and including layer 1
-	// todo handle edge case of sibling in the leafs
 	proof := make([]Node, lvl)
 	currentIdx := idx
 	// Compute the node we wish to prove membership of to the root
 	for currentLvl := lvl; currentLvl >= 1; currentLvl-- {
-		proof[currentLvl-1] = d.nodes[currentLvl][getSiblingIdx(currentIdx)]
+		// Only try to store the sibling node when it exists,
+		// if the tree is not complete this might not always be the case
+		if len(d.nodes[currentLvl]) > getSiblingIdx(currentIdx) {
+			proof[currentLvl-1] = d.nodes[currentLvl][getSiblingIdx(currentIdx)]
+		}
 		// Set next index to be the parent
 		currentIdx = currentIdx / 2
 	}
-	return ProofData{path: proof, lvl: lvl, idx: idx}
+	if err := recover(); err != nil {
+		log.Println("panic occurred during construction of Merkle proof. Is the index maybe out of range? : ", err)
+		return ProofData{}, errors.New("panic occurred during construction of Merkle proof. Is the index maybe out of range")
+	}
+	return ProofData{path: proof, lvl: lvl, idx: idx}, nil
 }
 
-func (d ProofData) Validate(data []byte, tree TreeData) bool {
-	digest := truncatedHash(data)
-	currentDigest := digest
+func (d ProofData) ValidateLeaf(data []byte, root *Node) bool {
+	leaf := truncatedHash(data)
+	return d.ValidateSubtree(leaf, root)
+}
+
+func (d ProofData) ValidateSubtree(subtree *Node, root *Node) bool {
+	currentNode := subtree
 	currentIdx := d.idx
 	var parent *Node
 	for currentLvl := d.lvl; currentLvl >= 1; currentLvl-- {
 		sibIdx := getSiblingIdx(currentIdx)
-		sibling := d.path[currentLvl-1] //tree.nodes[currentLvl][sibIdx]
-		// If the sibling is "right" then we must hash currentDigest first
-		if sibIdx%2 == 1 {
-			parent = computeNode(currentDigest, &sibling)
+		sibling := d.path[currentLvl-1]
+		// If the node is all-0 then it means it does not exist
+		// It is fine to assume this "magic" array since all nodes will be hash digests and so the all-0 string
+		// will only happen with negligible probability
+		if sibling.data == [digestBytes]byte{} {
+			// In case the node does not exist, the only child will be hashed
+			parent = truncatedHash(currentNode.data[:])
 		} else {
-			parent = computeNode(&sibling, currentDigest)
+			// If the sibling is "right" then we must hash currentNode first
+			if sibIdx%2 == 1 {
+				parent = computeNode(currentNode, &sibling)
+			} else {
+				parent = computeNode(&sibling, currentNode)
+			}
 		}
-		currentDigest = parent
+		currentNode = parent
 		currentIdx = currentIdx / 2
 	}
 	// Validate the root against the tree
-	if parent.data != tree.GetRoot().data {
+	if parent.data != root.data {
 		return false
 	}
 	return true
