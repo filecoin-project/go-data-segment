@@ -3,6 +3,7 @@ package merkleTree
 import (
 	"crypto/sha256"
 	"errors"
+	"fmt"
 	"log"
 )
 
@@ -113,11 +114,20 @@ func (d TreeData) ConstructProof(lvl int, idx int) (ProofData, error) {
 		log.Println("level is either below 1 or bigger than the tree supports")
 		return ProofData{}, errors.New("level is either below 1 or bigger than the tree supports")
 	}
+	if idx < 0 {
+		log.Println(fmt.Sprintf("the requested index %d is negative", idx))
+		return ProofData{}, errors.New(fmt.Sprintf("the requested index %d is negative", idx))
+	}
 	// The proof consists of appropriate siblings up to and including layer 1
 	proof := make([]Node, lvl)
 	currentIdx := idx
 	// Compute the node we wish to prove membership of to the root
 	for currentLvl := lvl; currentLvl >= 1; currentLvl-- {
+		// For error handling check that no index impossibly large is requested
+		if len(d.nodes[currentLvl]) <= currentIdx {
+			log.Println(fmt.Sprintf("the requested index %d on level %d does not exist in the tree", currentIdx, currentLvl))
+			return ProofData{}, errors.New(fmt.Sprintf("the requested index %d on level %d does not exist in the tree", currentIdx, currentLvl))
+		}
 		// Only try to store the sibling node when it exists,
 		// if the tree is not complete this might not always be the case
 		if len(d.nodes[currentLvl]) > getSiblingIdx(currentIdx) {
@@ -125,10 +135,6 @@ func (d TreeData) ConstructProof(lvl int, idx int) (ProofData, error) {
 		}
 		// Set next index to be the parent
 		currentIdx = currentIdx / 2
-	}
-	if err := recover(); err != nil {
-		log.Println("panic occurred during construction of Merkle proof. Is the index maybe out of range? : ", err)
-		return ProofData{}, errors.New("panic occurred during construction of Merkle proof. Is the index maybe out of range")
 	}
 	return ProofData{path: proof, lvl: lvl, idx: idx}, nil
 }
