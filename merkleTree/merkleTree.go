@@ -20,8 +20,10 @@ type MerkleTree interface {
 	// ConstructProof constructs a Merkle proof of the subtree (or leaf) at level lvl with index idx.
 	// level 0 is the root and index 0 is the left-most node in the level.
 	ConstructProof(lvl int, idx int) MerkleProof
+	// ValidateFromLeafs checks that the Merkle tree is correctly constructed
+	ValidateFromLeafs(leafData [][]byte) bool
 	// Validate checks that the Merkle tree is correctly constructed
-	Validate(leafData [][]byte) bool
+	Validate() bool
 }
 
 type TreeData struct {
@@ -39,8 +41,6 @@ type MerkleProof interface {
 	ValidateLeaf(data []byte, root *Node) bool
 	// ValidateSubtree ensures the correctness of the proof of a subtree against the root of a Merkle tree
 	ValidateSubtree(subtree *Node, root *Node) bool
-	// GetHashedData returns the digest of the data used in this proof
-	GetHashedData() Node
 }
 
 type ProofData struct {
@@ -71,6 +71,31 @@ func (d TreeData) GetRoot() *Node {
 	return &d.nodes[0][0]
 }
 
+func (d TreeData) ValidateFromLeafs(leafs [][]byte) bool {
+	tree, err := GrowTree(leafs)
+	if err != nil {
+		log.Println("could not grow tree")
+		return false
+	}
+	return d.compareTrees(tree)
+}
+
+func (d TreeData) Validate() bool {
+	tree := growTreeHashedLeafs(d.nodes[d.Depth()-1])
+	return d.compareTrees(tree)
+}
+
+func (d TreeData) compareTrees(otherTree TreeData) bool {
+	for i, lvl := range otherTree.nodes {
+		for j, node := range lvl {
+			if node.data != d.nodes[i][j].data {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 func NewBareTree(elements int) TreeData {
 	var tree TreeData
 	tree.nodes = make([][]Node, 1+log2Ceil(elements))
@@ -85,14 +110,18 @@ func GrowTree(leafData [][]byte) (TreeData, error) {
 	if leafData == nil || len(leafData) == 0 {
 		return tree, errors.New("empty input")
 	}
-	tree = NewBareTree(len(leafData))
 	leafLevel := hashList(leafData)
+	return growTreeHashedLeafs(leafLevel), nil
+}
+
+func growTreeHashedLeafs(leafs []Node) TreeData {
+	tree := NewBareTree(len(leafs))
 	// Set the leaf nodes
-	tree.nodes[log2Ceil(len(leafData))] = leafLevel
-	preLevel := leafLevel
+	tree.nodes[log2Ceil(len(leafs))] = leafs
+	preLevel := leafs
 	// Construct the Merkle tree bottom-up, starting from the leafs
 	// Note the -1 due to 0-indexing the root level
-	for level := log2Ceil(len(leafLevel)) - 1; level >= 0; level-- {
+	for level := log2Ceil(len(leafs)) - 1; level >= 0; level-- {
 		currentLevel := make([]Node, halfCeil(len(preLevel)))
 		// Traverse the level left to right
 		for i := 0; i+1 < len(preLevel); i = i + 2 {
@@ -106,7 +135,7 @@ func GrowTree(leafData [][]byte) (TreeData, error) {
 		tree.nodes[level] = currentLevel
 		preLevel = currentLevel
 	}
-	return tree, nil
+	return tree
 }
 
 func (d TreeData) ConstructProof(lvl int, idx int) (ProofData, error) {

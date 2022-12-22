@@ -164,6 +164,37 @@ func TestValidateSubtreeNegative(t *testing.T) {
 	}
 }
 
+func TestValidateFromLeafs(t *testing.T) {
+	testAmounts := []int{33, 235, 543}
+	for _, amount := range testAmounts {
+		tree, leaf := getTree(t, amount)
+		leafs := make([][]byte, amount)
+		for i := range leafs {
+			leafs[i] = leaf
+		}
+		assert.True(t, tree.ValidateFromLeafs(leafs))
+	}
+}
+
+func TestValidate(t *testing.T) {
+	testAmounts := []int{80, 1023, 1024, 1025}
+	for _, amount := range testAmounts {
+		tree, _ := getTree(t, amount)
+		assert.True(t, tree.Validate())
+	}
+}
+
+func TestValidateNegative(t *testing.T) {
+	testAmounts := []int{42, 1023, 1024, 1025}
+	for _, amount := range testAmounts {
+		tree, _ := getTree(t, amount)
+
+		// Corrupt a bit in a node
+		tree.nodes[3][3].data[3] ^= 0b10000000
+		assert.False(t, tree.Validate())
+	}
+}
+
 func TestFailureGrowTree(t *testing.T) {
 	_, err := GrowTree(nil)
 	assert.NotNil(t, err)
@@ -181,6 +212,14 @@ func TestFailureConstructProof(t *testing.T) {
 	assert.NotNil(t, err)
 	_, err = tree.ConstructProof(2, -1)
 	assert.NotNil(t, err)
+}
+
+func TestFailureValidate(t *testing.T) {
+	tree, _ := getTree(t, 20)
+	assert.False(t, tree.ValidateFromLeafs(nil))
+	assert.False(t, tree.ValidateFromLeafs([][]byte{}))
+	notEnough := make([][]byte, 19)
+	assert.False(t, tree.ValidateFromLeafs(notEnough))
 }
 
 // PRIVATE METHOD TESTS
