@@ -18,6 +18,8 @@ type MerkleTree interface {
 	Leafs() int
 	// GetRoot returns the root node of the tree
 	GetRoot() *Node
+	// GetLeafs returns all the leaf nodes in the tree
+	GetLeafs() []Node
 	// ConstructProof constructs a Merkle proof of the subtree (or leaf) at level lvl with index idx.
 	// level 0 is the root and index 0 is the left-most node in a level.
 	ConstructProof(lvl int, idx int) (MerkleProof, error)
@@ -42,6 +44,14 @@ type Node struct {
 }
 
 type MerkleProof interface {
+	// GetPath returns the nodes in the proof, starting level 1 (the children of the root)
+	GetPath() []Node
+	// GetLevel returns the level in the tree of the node in the tree which the proof validates.
+	// The root node is at level 0.
+	GetLevel() int
+	// GetIndex returns the index of the node which the proof validates
+	// The left-most node in a given level is 0
+	GetIndex() int
 	// ValidateLeaf ensures the correctness of the proof of a leaf against the root of a Merkle tree
 	ValidateLeaf(leafs []byte, root *Node) bool
 	// ValidateSubtree ensures the correctness of the proof of a subtree against the root of a Merkle tree
@@ -71,13 +81,17 @@ func (d TreeData) GetRoot() *Node {
 	return &d.nodes[0][0]
 }
 
+func (d TreeData) GetLeafs() []Node {
+	return d.nodes[len(d.nodes)-1]
+}
+
 func (d TreeData) ValidateFromLeafs(leafs [][]byte) bool {
 	tree, err := GrowTree(leafs)
 	if err != nil {
 		log.Println("could not grow tree")
 		return false
 	}
-	return reflect.DeepEqual(d.nodes, tree.nodes)
+	return reflect.DeepEqual(d, tree)
 }
 
 func (d TreeData) Validate() bool {
@@ -94,8 +108,8 @@ func NewBareTree(elements int) TreeData {
 	return tree
 }
 
-func GrowTree(leafData [][]byte) (TreeData, error) {
-	var tree TreeData
+func GrowTree(leafData [][]byte) (MerkleTree, error) {
+	var tree MerkleTree
 	if leafData == nil || len(leafData) == 0 {
 		return tree, errors.New("empty input")
 	}
@@ -127,7 +141,19 @@ func growTreeHashedLeafs(leafs []Node) TreeData {
 	return tree
 }
 
-func (d TreeData) ConstructProof(lvl int, idx int) (ProofData, error) {
+func (d ProofData) GetPath() []Node {
+	return d.path
+}
+
+func (d ProofData) GetLevel() int {
+	return d.lvl
+}
+
+func (d ProofData) GetIndex() int {
+	return d.idx
+}
+
+func (d TreeData) ConstructProof(lvl int, idx int) (MerkleProof, error) {
 	if lvl < 1 || lvl >= d.Depth() {
 		log.Println("level is either below 1 or bigger than the tree supports")
 		return ProofData{}, errors.New("level is either below 1 or bigger than the tree supports")
@@ -176,18 +202,7 @@ func (d TreeData) ConstructBatchedProof(leftLvl int, leftIdx int, rightLvl int, 
 	if err != nil {
 		return factory(), err
 	}
-	// Find common index by starting from the top of the tree and see where the proof-path diverge
-	maxLength := max(len(leftProof.path), len(rightProof.path))
-	var ctr int
-	for ctr = 0; ctr < maxLength; ctr++ {
-		if leftProof.path[ctr] != rightProof.path[ctr] {
-			break
-		}
-	}
-	leftPath := leftProof.path[ctr:]
-	rightPath := rightProof.path[ctr:]
-	commonPath := rightProof.path[:ctr]
-	return BatchedProofData{leftPath: leftPath, rightPath: rightPath, commonPath: commonPath, leftLvl: leftLvl, leftIdx: leftIdx, rightLvl: rightLvl, rightIdx: rightIdx}, nil
+	return CreateBatchedProof(leftProof, rightProof), nil
 }
 
 func (d ProofData) ValidateLeaf(data []byte, root *Node) bool {
@@ -261,6 +276,13 @@ func truncatedHash(data []byte) *Node {
 
 func max(x int, y int) int {
 	if x > y {
+		return x
+	}
+	return y
+}
+
+func min(x int, y int) int {
+	if x < y {
 		return x
 	}
 	return y
