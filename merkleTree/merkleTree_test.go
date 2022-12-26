@@ -70,7 +70,7 @@ func TestGrowTreeOdd(t *testing.T) {
 
 func TestGrowTreeSoak(t *testing.T) {
 	for amount := 4; amount < 125; amount++ {
-		tree, _ := getTree(t, amount)
+		tree := getTree(t, amount)
 
 		assert.Equal(t, 1+log2Ceil(amount), tree.Depth())
 		// Leafs should have "amount" elements
@@ -79,7 +79,7 @@ func TestGrowTreeSoak(t *testing.T) {
 }
 
 func TestConstructProof(t *testing.T) {
-	tree, _ := getTree(t, 130)
+	tree := getTree(t, 130)
 
 	// Construct a proof of a leaf node
 	proof, err := tree.ConstructProof(tree.Depth()-1, 55)
@@ -93,24 +93,24 @@ func TestConstructProof(t *testing.T) {
 func TestValidateLeafSunshine(t *testing.T) {
 	testAmounts := []int{130, 255, 256, 257, 1000000}
 	for _, amount := range testAmounts {
-		tree, leaf := getTree(t, amount)
+		tree := getTree(t, amount)
 		// Construct a proof of a leaf node
 		proof, err := tree.ConstructProof(tree.Depth()-1, 0)
 		assert.Nil(t, err)
-		assert.True(t, proof.ValidateLeaf(leaf, tree.GetRoot()))
+		assert.True(t, proof.ValidateLeaf(getLeaf(t, 0), tree.GetRoot()))
 		proof, err = tree.ConstructProof(tree.Depth()-1, amount-1)
 		assert.Nil(t, err)
-		assert.True(t, proof.ValidateLeaf(leaf, tree.GetRoot()))
+		assert.True(t, proof.ValidateLeaf(getLeaf(t, amount-1), tree.GetRoot()))
 		proof, err = tree.ConstructProof(tree.Depth()-1, amount/2-5)
 		assert.Nil(t, err)
-		assert.True(t, proof.ValidateLeaf(leaf, tree.GetRoot()))
+		assert.True(t, proof.ValidateLeaf(getLeaf(t, amount/2-5), tree.GetRoot()))
 	}
 }
 
 func TestValidateLeafNegative(t *testing.T) {
 	testAmounts := []int{68, 511, 512, 513, 1000000}
 	for _, amount := range testAmounts {
-		tree, leaf := getTree(t, amount)
+		tree := getTree(t, amount)
 		// Construct a proof of a leaf node
 		proof, err := tree.ConstructProof(tree.Depth()-1, 4)
 		assert.Nil(t, err)
@@ -119,7 +119,7 @@ func TestValidateLeafNegative(t *testing.T) {
 				// Corrupt a bit in a node
 				// Note that modifying the most significant bits of the last byte will still result in failure even tough those bits should never be set
 				proof.path[currentLvl].data[i] ^= 0b10000000
-				assert.False(t, proof.ValidateLeaf(leaf, tree.GetRoot()))
+				assert.False(t, proof.ValidateLeaf(getLeaf(t, 4), tree.GetRoot()))
 			}
 		}
 	}
@@ -128,7 +128,7 @@ func TestValidateLeafNegative(t *testing.T) {
 func TestValidateProofSubtree(t *testing.T) {
 	testAmounts := []int{1300, 65535, 65536, 65537}
 	for _, amount := range testAmounts {
-		tree, _ := getTree(t, amount)
+		tree := getTree(t, amount)
 		for lvl := 1; lvl < tree.Depth(); lvl++ {
 			// Test the smallest node in the level
 			proof, err := tree.ConstructProof(lvl, 0)
@@ -151,7 +151,7 @@ func TestValidateProofSubtree(t *testing.T) {
 func TestValidateSubtreeNegative(t *testing.T) {
 	testAmounts := []int{68, 511, 512, 513, 1000000}
 	for _, amount := range testAmounts {
-		tree, _ := getTree(t, amount)
+		tree := getTree(t, amount)
 		for currentLvl := 1; currentLvl < tree.Depth()-1; currentLvl++ {
 			// Construct a proof of the second to most right node
 			idx := len(tree.nodes[currentLvl]) - 2
@@ -167,10 +167,10 @@ func TestValidateSubtreeNegative(t *testing.T) {
 func TestValidateFromLeafs(t *testing.T) {
 	testAmounts := []int{33, 235, 543}
 	for _, amount := range testAmounts {
-		tree, leaf := getTree(t, amount)
+		tree := getTree(t, amount)
 		leafs := make([][]byte, amount)
 		for i := range leafs {
-			leafs[i] = leaf
+			leafs[i] = getLeaf(t, i)
 		}
 		assert.True(t, tree.ValidateFromLeafs(leafs))
 	}
@@ -179,7 +179,7 @@ func TestValidateFromLeafs(t *testing.T) {
 func TestValidate(t *testing.T) {
 	testAmounts := []int{80, 1023, 1024, 1025}
 	for _, amount := range testAmounts {
-		tree, _ := getTree(t, amount)
+		tree := getTree(t, amount)
 		assert.True(t, tree.Validate())
 	}
 }
@@ -187,7 +187,7 @@ func TestValidate(t *testing.T) {
 func TestValidateNegative(t *testing.T) {
 	testAmounts := []int{42, 1023, 1024, 1025}
 	for _, amount := range testAmounts {
-		tree, _ := getTree(t, amount)
+		tree := getTree(t, amount)
 
 		// Corrupt a bit in a node
 		tree.nodes[3][3].data[3] ^= 0b10000000
@@ -203,7 +203,7 @@ func TestFailureGrowTree(t *testing.T) {
 }
 
 func TestFailureConstructProof(t *testing.T) {
-	tree, _ := getTree(t, 20)
+	tree := getTree(t, 20)
 	_, err := tree.ConstructProof(0, 0)
 	assert.NotNil(t, err)
 	_, err = tree.ConstructProof(10, 0)
@@ -215,7 +215,7 @@ func TestFailureConstructProof(t *testing.T) {
 }
 
 func TestFailureValidate(t *testing.T) {
-	tree, _ := getTree(t, 20)
+	tree := getTree(t, 20)
 	assert.False(t, tree.ValidateFromLeafs(nil))
 	assert.False(t, tree.ValidateFromLeafs([][]byte{}))
 	notEnough := make([][]byte, 19)
@@ -295,15 +295,22 @@ func TestLog2(t *testing.T) {
 }
 
 // HELPER METHODS
-// Builds an arbitrary tree of equal leaf nodes and returns the tree and leaf nodes
-func getTree(t *testing.T, leafs int) (TreeData, []byte) {
-	singletonInput, err := hex.DecodeString("deadbeef")
-	assert.Nil(t, err)
+// Builds an arbitrary tree of equal leaf nodes.
+// Each leaf is defined to be the base XORed with their index
+func getTree(t *testing.T, leafs int) TreeData {
 	input := make([][]byte, leafs)
 	for i := 0; i < leafs; i++ {
-		input[i] = singletonInput
+		input[i] = getLeaf(t, i)
 	}
 	tree, err := GrowTree(input)
 	assert.Nil(t, err)
-	return tree, singletonInput
+	return tree
+}
+
+// getLeaf returns a leaf which is 0xdeadbeef XORed with idx
+func getLeaf(t *testing.T, idx int) []byte {
+	singletonInput, err := hex.DecodeString("deadbeef")
+	assert.Nil(t, err)
+	singletonInput[0] ^= byte(idx)
+	return singletonInput
 }

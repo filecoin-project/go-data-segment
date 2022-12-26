@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"reflect"
 )
 
 const digestBits = 254
@@ -18,11 +19,15 @@ type MerkleTree interface {
 	// GetRoot returns the root node of the tree
 	GetRoot() *Node
 	// ConstructProof constructs a Merkle proof of the subtree (or leaf) at level lvl with index idx.
-	// level 0 is the root and index 0 is the left-most node in the level.
-	ConstructProof(lvl int, idx int) MerkleProof
-	// ValidateFromLeafs checks that the Merkle tree is correctly constructed
+	// level 0 is the root and index 0 is the left-most node in a level.
+	ConstructProof(lvl int, idx int) (MerkleProof, error)
+	// ConstructBatchedProof constructs a batched Merkle proof of the nodes from and including leftLvl, leftIdx, to and including rightLvl, rightIdx.
+	// That is, if leftLvl, or rightLvl, is not the leaf-level, then the proof is of the entire subtree from leftLvl at leftIdx to rightLvl at rightIdx
+	// Level 0 is the root and index 0 is the left-most node in a level.
+	ConstructBatchedProof(leftLvl int, leftIdx int, rightLvl int, rightIdx int) (BatchedMerkleProof, error)
+	// ValidateFromLeafs checks that the Merkle tree is correctly constructed based on all the leaf data
 	ValidateFromLeafs(leafData [][]byte) bool
-	// Validate checks that the Merkle tree is correctly constructed
+	// Validate checks that the Merkle tree is correctly constructed, based on the internal nodes
 	Validate() bool
 }
 
@@ -38,7 +43,7 @@ type Node struct {
 
 type MerkleProof interface {
 	// ValidateLeaf ensures the correctness of the proof of a leaf against the root of a Merkle tree
-	ValidateLeaf(data []byte, root *Node) bool
+	ValidateLeaf(leafs []byte, root *Node) bool
 	// ValidateSubtree ensures the correctness of the proof of a subtree against the root of a Merkle tree
 	ValidateSubtree(subtree *Node, root *Node) bool
 }
@@ -50,11 +55,6 @@ type ProofData struct {
 	// idx indicates the index within the level where the element whose membership to prove is located
 	// Leftmost node is index 0
 	idx int
-}
-
-type BatchedMerkleProof interface {
-	// ValidateSequence ensures the correctness of the proof of a sequence of subtrees against the root of a Merkle tree
-	ValidateSequence(firstSubtree *Node, root *Node) bool
 }
 
 // Depth returns the amount of levels in the tree, including the root level and leafs.
@@ -77,23 +77,12 @@ func (d TreeData) ValidateFromLeafs(leafs [][]byte) bool {
 		log.Println("could not grow tree")
 		return false
 	}
-	return d.compareTrees(tree)
+	return reflect.DeepEqual(d.nodes, tree.nodes)
 }
 
 func (d TreeData) Validate() bool {
 	tree := growTreeHashedLeafs(d.nodes[d.Depth()-1])
-	return d.compareTrees(tree)
-}
-
-func (d TreeData) compareTrees(otherTree TreeData) bool {
-	for i, lvl := range otherTree.nodes {
-		for j, node := range lvl {
-			if node.data != d.nodes[i][j].data {
-				return false
-			}
-		}
-	}
-	return true
+	return reflect.DeepEqual(d.nodes, tree.nodes)
 }
 
 func NewBareTree(elements int) TreeData {
@@ -168,6 +157,39 @@ func (d TreeData) ConstructProof(lvl int, idx int) (ProofData, error) {
 	return ProofData{path: proof, lvl: lvl, idx: idx}, nil
 }
 
+func (d TreeData) ConstructBatchedProof(leftLvl int, leftIdx int, rightLvl int, rightIdx int) (BatchedMerkleProof, error) {
+	var factory BatchedProofFactory = CreateEmptyBatchedProof
+	if leftLvl < 1 || leftLvl >= d.Depth() || rightLvl < 1 || rightLvl >= d.Depth() {
+		log.Println("a level is either below 1 or bigger than the tree supports")
+		return factory(), errors.New("a level is either below 1 or bigger than the tree supports")
+	}
+	if leftIdx < 0 || rightIdx < 0 {
+		log.Println("a requested index is negative")
+		return factory(), errors.New("a requested index is negative")
+	}
+	// Construct individual proofs
+	leftProof, err := d.ConstructProof(leftLvl, leftIdx)
+	if err != nil {
+		return factory(), err
+	}
+	rightProof, err := d.ConstructProof(rightLvl, rightIdx)
+	if err != nil {
+		return factory(), err
+	}
+	// Find common index by starting from the top of the tree and see where the proof-path diverge
+	maxLength := max(len(leftProof.path), len(rightProof.path))
+	var ctr int
+	for ctr = 0; ctr < maxLength; ctr++ {
+		if leftProof.path[ctr] != rightProof.path[ctr] {
+			break
+		}
+	}
+	leftPath := leftProof.path[ctr:]
+	rightPath := rightProof.path[ctr:]
+	commonPath := rightProof.path[:ctr]
+	return BatchedProofData{leftPath: leftPath, rightPath: rightPath, commonPath: commonPath, leftLvl: leftLvl, leftIdx: leftIdx, rightLvl: rightLvl, rightIdx: rightIdx}, nil
+}
+
 func (d ProofData) ValidateLeaf(data []byte, root *Node) bool {
 	leaf := truncatedHash(data)
 	return d.ValidateSubtree(leaf, root)
@@ -235,6 +257,13 @@ func truncatedHash(data []byte) *Node {
 	digst[(256/8)-1] &= 0b00111111
 	node := Node{digst}
 	return &node
+}
+
+func max(x int, y int) int {
+	if x > y {
+		return x
+	}
+	return y
 }
 
 // Compute ceil(x/2)
