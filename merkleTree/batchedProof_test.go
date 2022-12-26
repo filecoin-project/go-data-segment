@@ -28,9 +28,9 @@ func TestValidateSequence(t *testing.T) {
 		assert.True(t, proof.ValidateSequence(&tree.(TreeData).nodes[tree.Depth()-3][0], truncatedHash(getLeaf(t, amount-1)), tree.GetRoot()))
 
 		// Subtree
-		proof, err = tree.ConstructBatchedProof(tree.Depth()-3, 0, tree.Depth()-2, 1)
+		proof, err = tree.ConstructBatchedProof(tree.Depth()-3, 5, tree.Depth()-2, 1)
 		assert.Nil(t, err)
-		assert.True(t, proof.ValidateSequence(&tree.(TreeData).nodes[tree.Depth()-3][0], &tree.(TreeData).nodes[tree.Depth()-2][1], tree.GetRoot()))
+		assert.True(t, proof.ValidateSequence(&tree.(TreeData).nodes[tree.Depth()-3][5], &tree.(TreeData).nodes[tree.Depth()-2][1], tree.GetRoot()))
 	}
 }
 
@@ -50,5 +50,32 @@ func TestValidateLeafSequence(t *testing.T) {
 		proof, err = tree.ConstructBatchedProof(tree.Depth()-1, 0, tree.Depth()-1, amount-1)
 		assert.Nil(t, err)
 		assert.True(t, proof.ValidateLeafs(getLeafs(t, 0, amount), 0, tree))
+	}
+}
+
+// NEGATIVE TESTING
+func TestNegativeValidateLeafs(t *testing.T) {
+	testAmounts := []int{68, 511, 512, 513, 1000000}
+	for _, amount := range testAmounts {
+		tree := getTree(t, amount)
+		// Construct a proof of a leaf node
+		proof, err := tree.ConstructBatchedProof(tree.Depth()-1, 16, tree.Depth()-1, 22)
+		assert.Nil(t, err)
+		for currentLvl := 0; currentLvl < 3; currentLvl++ {
+			for i := 0; i < digestBytes; i++ {
+				// Corrupt a bit in a node
+				// Note that modifying the most significant bits of the last byte will still result in failure even tough those bits should never be set
+				proof.(BatchedProofData).leftPath[currentLvl].data[i] ^= 0b10000000
+				assert.False(t, proof.ValidateLeafs(getLeafs(t, 16, 22-16+1), 16, tree))
+
+				// Revert the modification of the left proof and try the right proof
+				proof.(BatchedProofData).leftPath[currentLvl].data[i] ^= 0b10000000
+				assert.True(t, proof.ValidateLeafs(getLeafs(t, 16, 22-16+1), 16, tree))
+				proof.(BatchedProofData).rightPath[currentLvl].data[i] ^= 0b10000000
+				assert.False(t, proof.ValidateLeafs(getLeafs(t, 16, 22-16+1), 16, tree))
+				// Reset the right proof
+				proof.(BatchedProofData).rightPath[currentLvl].data[i] ^= 0b10000000
+			}
+		}
 	}
 }

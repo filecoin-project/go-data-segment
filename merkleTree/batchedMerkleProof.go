@@ -6,6 +6,10 @@ type BatchedMerkleProof interface {
 	// ValidateLeafs ensures the correctness of the proof of a sequence of leafs against a Merkle tree.
 	// startIdx indicates the index in the tree of the left-most leaf contained in the sequence leafs
 	ValidateLeafs(leafs [][]byte, startIdx int, tree MerkleTree) bool
+	// GetLeftProof returns the underlying, full, proof of the left-most element proven in the batch
+	GetLeftProof() MerkleProof
+	// GetRightProof returns the underlying, full, proof of the right-most element proven in the batch
+	GetRightProof() MerkleProof
 }
 
 type BatchedProofFactory func() BatchedMerkleProof
@@ -32,6 +36,14 @@ func CreateEmptyBatchedProof() BatchedMerkleProof {
 	return BatchedProofData{}
 }
 
+func (b BatchedProofData) GetLeftProof() MerkleProof {
+	return b.getSubproof(b.leftPath, b.leftLvl, b.leftIdx)
+}
+
+func (b BatchedProofData) GetRightProof() MerkleProof {
+	return b.getSubproof(b.rightPath, b.rightLvl, b.rightIdx)
+}
+
 func CreateBatchedProof(leftProof MerkleProof, rightProof MerkleProof) BatchedMerkleProof {
 	// Find common index by starting from the top of the tree and see where the proof-path diverge
 	minLength := min(len(leftProof.GetPath()), len(rightProof.GetPath()))
@@ -49,26 +61,24 @@ func CreateBatchedProof(leftProof MerkleProof, rightProof MerkleProof) BatchedMe
 }
 
 func (b BatchedProofData) ValidateSequence(leftSubtree *Node, rightSubtree *Node, root *Node) bool {
-	if !b.validatePath(leftSubtree, b.leftPath, b.leftLvl, b.leftIdx, root) {
+	// Validate the full subtree. This could approach could be optimized a bit
+	if !b.getSubproof(b.leftPath, b.leftLvl, b.leftIdx).
+		ValidateSubtree(leftSubtree, root) {
 		return false
 	}
-	if !b.validatePath(rightSubtree, b.rightPath, b.rightLvl, b.rightIdx, root) {
+	if !b.getSubproof(b.rightPath, b.rightLvl, b.rightIdx).
+		ValidateSubtree(rightSubtree, root) {
 		return false
 	}
 	return true
 }
 
-func (b BatchedProofData) validatePath(subtree *Node, path []Node, lvl int, idx int, root *Node) bool {
+func (b BatchedProofData) getSubproof(subPath []Node, lvl int, idx int) MerkleProof {
 	// Reconstruct the full path
-	fullPath := make([]Node, len(b.commonPath)+len(path))
+	fullPath := make([]Node, len(b.commonPath)+len(subPath))
 	copy(fullPath, b.commonPath)
-	copy(fullPath[len(b.commonPath):], path)
-	proof := ProofData{path: fullPath, lvl: lvl, idx: idx}
-	// Validate the full subtree. This could approach could be optimized a bit
-	if !proof.ValidateSubtree(subtree, root) {
-		return false
-	}
-	return true
+	copy(fullPath[len(b.commonPath):], subPath)
+	return ProofData{path: fullPath, lvl: lvl, idx: idx}
 }
 
 func (b BatchedProofData) ValidateLeafs(leafs [][]byte, startIdx int, tree MerkleTree) bool {
