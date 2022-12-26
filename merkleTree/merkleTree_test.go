@@ -107,19 +107,22 @@ func TestValidateLeafSunshine(t *testing.T) {
 	}
 }
 
-func TestValidateLeafNegative(t *testing.T) {
+func TestNegativeValidateLeaf(t *testing.T) {
 	testAmounts := []int{68, 511, 512, 513, 1000000}
 	for _, amount := range testAmounts {
 		tree := getTree(t, amount)
 		// Construct a proof of a leaf node
 		proof, err := tree.ConstructProof(tree.Depth()-1, 4)
 		assert.Nil(t, err)
+		assert.True(t, proof.ValidateLeaf(getLeaf(t, 4), tree.GetRoot()))
 		for currentLvl := 0; currentLvl < tree.Depth()-1; currentLvl++ {
 			for i := 0; i < digestBytes; i++ {
 				// Corrupt a bit in a node
 				// Note that modifying the most significant bits of the last byte will still result in failure even tough those bits should never be set
 				proof.GetPath()[currentLvl].data[i] ^= 0b10000000
 				assert.False(t, proof.ValidateLeaf(getLeaf(t, 4), tree.GetRoot()))
+				// Reset the proof
+				proof.GetPath()[currentLvl].data[i] ^= 0b10000000
 			}
 		}
 	}
@@ -148,7 +151,7 @@ func TestValidateProofSubtree(t *testing.T) {
 	}
 }
 
-func TestValidateSubtreeNegative(t *testing.T) {
+func TestNegativeValidateSubtree(t *testing.T) {
 	testAmounts := []int{68, 511, 512, 513, 1000000}
 	for _, amount := range testAmounts {
 		tree := getTree(t, amount)
@@ -181,7 +184,7 @@ func TestValidate(t *testing.T) {
 	}
 }
 
-func TestValidateNegative(t *testing.T) {
+func TestNegativeValidate(t *testing.T) {
 	testAmounts := []int{42, 1023, 1024, 1025}
 	for _, amount := range testAmounts {
 		tree := getTree(t, amount)
