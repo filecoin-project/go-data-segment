@@ -28,11 +28,11 @@ func TestGrowTreeSunshine(t *testing.T) {
 
 	assert.Equal(t, 2, tree.Depth())
 	assert.Equal(t, 2, tree.Leafs())
-	assert.Equal(t, 2, len(tree.nodes))
-	assert.Equal(t, 1, len(tree.nodes[0]))
-	assert.Equal(t, 2, len(tree.nodes[1]))
-	assert.Equal(t, expectedLeaf, tree.nodes[1][0].data[:])
-	assert.Equal(t, expectedLeaf, tree.nodes[1][1].data[:])
+	assert.Equal(t, 2, len(tree.(TreeData).nodes))
+	assert.Equal(t, 1, len(tree.(TreeData).nodes[0]))
+	assert.Equal(t, 2, len(tree.(TreeData).nodes[1]))
+	assert.Equal(t, expectedLeaf, tree.(TreeData).nodes[1][0].data[:])
+	assert.Equal(t, expectedLeaf, tree.(TreeData).nodes[1][1].data[:])
 	assert.Equal(t, expectedRoot, (*tree.GetRoot()).data[:])
 }
 
@@ -56,15 +56,15 @@ func TestGrowTreeOdd(t *testing.T) {
 
 	assert.Equal(t, 3, tree.Depth())
 	assert.Equal(t, 3, tree.Leafs())
-	assert.Equal(t, 3, len(tree.nodes))
-	assert.Equal(t, 1, len(tree.nodes[0]))
-	assert.Equal(t, 2, len(tree.nodes[1]))
-	assert.Equal(t, 3, len(tree.nodes[2]))
-	assert.Equal(t, expectedLeaf, tree.nodes[2][0].data[:])
-	assert.Equal(t, expectedLeaf, tree.nodes[2][1].data[:])
-	assert.Equal(t, expectedLeaf, tree.nodes[2][2].data[:])
-	assert.Equal(t, expectedLeftMiddleNode, tree.nodes[1][0].data[:])
-	assert.Equal(t, expectedRightMiddleNode, tree.nodes[1][1].data[:])
+	assert.Equal(t, 3, len(tree.(TreeData).nodes))
+	assert.Equal(t, 1, len(tree.(TreeData).nodes[0]))
+	assert.Equal(t, 2, len(tree.(TreeData).nodes[1]))
+	assert.Equal(t, 3, len(tree.(TreeData).nodes[2]))
+	assert.Equal(t, expectedLeaf, tree.(TreeData).nodes[2][0].data[:])
+	assert.Equal(t, expectedLeaf, tree.(TreeData).nodes[2][1].data[:])
+	assert.Equal(t, expectedLeaf, tree.(TreeData).nodes[2][2].data[:])
+	assert.Equal(t, expectedLeftMiddleNode, tree.(TreeData).nodes[1][0].data[:])
+	assert.Equal(t, expectedRightMiddleNode, tree.(TreeData).nodes[1][1].data[:])
 	assert.Equal(t, expectedRoot, (*tree.GetRoot()).data[:])
 }
 
@@ -85,9 +85,9 @@ func TestConstructProof(t *testing.T) {
 	proof, err := tree.ConstructProof(tree.Depth()-1, 55)
 	assert.Nil(t, err)
 
-	assert.Equal(t, proof.lvl, log2Ceil(tree.Leafs()))
-	assert.Equal(t, proof.idx, 55)
-	assert.Equal(t, len(proof.path), tree.Depth()-1)
+	assert.Equal(t, proof.GetLevel(), log2Ceil(tree.Leafs()))
+	assert.Equal(t, proof.GetIndex(), 55)
+	assert.Equal(t, len(proof.GetPath()), tree.Depth()-1)
 }
 
 func TestValidateLeafSunshine(t *testing.T) {
@@ -118,7 +118,7 @@ func TestValidateLeafNegative(t *testing.T) {
 			for i := 0; i < digestBytes; i++ {
 				// Corrupt a bit in a node
 				// Note that modifying the most significant bits of the last byte will still result in failure even tough those bits should never be set
-				proof.path[currentLvl].data[i] ^= 0b10000000
+				proof.GetPath()[currentLvl].data[i] ^= 0b10000000
 				assert.False(t, proof.ValidateLeaf(getLeaf(t, 4), tree.GetRoot()))
 			}
 		}
@@ -133,17 +133,17 @@ func TestValidateProofSubtree(t *testing.T) {
 			// Test the smallest node in the level
 			proof, err := tree.ConstructProof(lvl, 0)
 			assert.Nil(t, err)
-			assert.True(t, proof.ValidateSubtree(&tree.nodes[lvl][0], tree.GetRoot()))
+			assert.True(t, proof.ValidateSubtree(&tree.(TreeData).nodes[lvl][0], tree.GetRoot()))
 
 			// Test the largest node in the level
-			proof, err = tree.ConstructProof(lvl, len(tree.nodes[lvl])-1)
+			proof, err = tree.ConstructProof(lvl, len(tree.(TreeData).nodes[lvl])-1)
 			assert.Nil(t, err)
-			assert.True(t, proof.ValidateSubtree(&tree.nodes[lvl][len(tree.nodes[lvl])-1], tree.GetRoot()))
+			assert.True(t, proof.ValidateSubtree(&tree.(TreeData).nodes[lvl][len(tree.(TreeData).nodes[lvl])-1], tree.GetRoot()))
 
 			// Test a node in the middle of the level
-			proof, err = tree.ConstructProof(lvl, len(tree.nodes[lvl])/3)
+			proof, err = tree.ConstructProof(lvl, len(tree.(TreeData).nodes[lvl])/3)
 			assert.Nil(t, err)
-			assert.True(t, proof.ValidateSubtree(&tree.nodes[lvl][len(tree.nodes[lvl])/3], tree.GetRoot()))
+			assert.True(t, proof.ValidateSubtree(&tree.(TreeData).nodes[lvl][len(tree.(TreeData).nodes[lvl])/3], tree.GetRoot()))
 		}
 	}
 }
@@ -154,12 +154,12 @@ func TestValidateSubtreeNegative(t *testing.T) {
 		tree := getTree(t, amount)
 		for currentLvl := 1; currentLvl < tree.Depth()-1; currentLvl++ {
 			// Construct a proof of the second to most right node
-			idx := len(tree.nodes[currentLvl]) - 2
+			idx := len(tree.(TreeData).nodes[currentLvl]) - 2
 			proof, err := tree.ConstructProof(currentLvl, idx)
 			assert.Nil(t, err)
 			// Corrupt a bit in a node
-			proof.path[currentLvl/3].data[0] ^= 0b10000000
-			assert.False(t, proof.ValidateSubtree(&tree.nodes[currentLvl][idx], tree.GetRoot()))
+			proof.GetPath()[currentLvl/3].data[0] ^= 0b10000000
+			assert.False(t, proof.ValidateSubtree(&tree.(TreeData).nodes[currentLvl][idx], tree.GetRoot()))
 		}
 	}
 }
@@ -168,10 +168,7 @@ func TestValidateFromLeafs(t *testing.T) {
 	testAmounts := []int{33, 235, 543}
 	for _, amount := range testAmounts {
 		tree := getTree(t, amount)
-		leafs := make([][]byte, amount)
-		for i := range leafs {
-			leafs[i] = getLeaf(t, i)
-		}
+		leafs := getLeafs(t, 0, amount)
 		assert.True(t, tree.ValidateFromLeafs(leafs))
 	}
 }
@@ -190,7 +187,7 @@ func TestValidateNegative(t *testing.T) {
 		tree := getTree(t, amount)
 
 		// Corrupt a bit in a node
-		tree.nodes[3][3].data[3] ^= 0b10000000
+		tree.(TreeData).nodes[3][3].data[3] ^= 0b10000000
 		assert.False(t, tree.Validate())
 	}
 }
@@ -297,14 +294,19 @@ func TestLog2(t *testing.T) {
 // HELPER METHODS
 // Builds an arbitrary tree of equal leaf nodes.
 // Each leaf is defined to be the base XORed with their index
-func getTree(t *testing.T, leafs int) TreeData {
-	input := make([][]byte, leafs)
-	for i := 0; i < leafs; i++ {
-		input[i] = getLeaf(t, i)
-	}
-	tree, err := GrowTree(input)
+func getTree(t *testing.T, leafs int) MerkleTree {
+	leafData := getLeafs(t, 0, leafs)
+	tree, err := GrowTree(leafData)
 	assert.Nil(t, err)
 	return tree
+}
+
+func getLeafs(t *testing.T, startIdx int, amount int) [][]byte {
+	leafs := make([][]byte, amount)
+	for i := 0; i < amount; i++ {
+		leafs[i] = getLeaf(t, i+startIdx)
+	}
+	return leafs
 }
 
 // getLeaf returns a leaf which is 0xdeadbeef XORed with idx
