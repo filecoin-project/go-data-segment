@@ -6,6 +6,24 @@ import (
 )
 
 // PUBLIC METHOD TESTS
+func TestGettersSunshine(t *testing.T) {
+	tree := getTree(t, 42)
+	left, errLeft := tree.ConstructProof(2, 2)
+	assert.Nil(t, errLeft)
+	right, errRight := tree.ConstructProof(1, 1)
+	assert.Nil(t, errRight)
+	proof := CreateBatchedProof(left, right)
+	assert.True(t, proof.ValidateSequence(&tree.(data).nodes[2][2], &tree.(data).nodes[1][1], tree.Root()))
+	assert.True(t, proof.LeftProof().ValidateSubtree(&tree.(data).nodes[2][2], tree.Root()))
+	assert.True(t, proof.RightProof().ValidateSubtree(&tree.(data).nodes[1][1], tree.Root()))
+}
+
+func TestGettersEmptyProof(t *testing.T) {
+	proof := CreateEmptyBatchedProof()
+	assert.NotNil(t, proof)
+	assert.NotNil(t, proof.LeftProof())
+	assert.NotNil(t, proof.RightProof())
+}
 
 func TestValidateSequence(t *testing.T) {
 	testAmounts := []int{130, 255, 256, 257, 1000000}
@@ -31,6 +49,33 @@ func TestValidateSequence(t *testing.T) {
 		proof, err = tree.ConstructBatchedProof(tree.Depth()-3, 5, tree.Depth()-2, 1)
 		assert.Nil(t, err)
 		assert.True(t, proof.ValidateSequence(&tree.(data).nodes[tree.Depth()-3][5], &tree.(data).nodes[tree.Depth()-2][1], tree.Root()))
+	}
+}
+
+// NEGATIVE TESTING
+func TestNegativeValidateSequence(t *testing.T) {
+	testAmounts := []int{130, 255, 256, 257, 1000000}
+	for _, amount := range testAmounts {
+		tree := getTree(t, amount)
+		// Construct a proof of a leaf node
+		proof, err := tree.ConstructBatchedProof(tree.Depth()-2, 9, tree.Depth()-2, 31)
+		assert.Nil(t, err)
+		for currentLvl := 0; currentLvl < 3; currentLvl++ {
+			for i := 0; i < digestBytes; i++ {
+				// Corrupt a bit in a node
+				// Note that modifying the most significant bits of the last byte will still result in failure even tough those bits should never be set
+				proof.(BatchedProofData).leftPath[currentLvl].data[i] ^= 0b10000000
+				assert.False(t, proof.ValidateSequence(&tree.(data).nodes[tree.Depth()-2][9], &tree.(data).nodes[tree.Depth()-2][31], tree.Root()))
+				// Revert the modification of the left proof and try the right proof
+				proof.(BatchedProofData).leftPath[currentLvl].data[i] ^= 0b10000000
+
+				assert.True(t, proof.ValidateSequence(&tree.(data).nodes[tree.Depth()-2][9], &tree.(data).nodes[tree.Depth()-2][31], tree.Root()))
+				proof.(BatchedProofData).rightPath[currentLvl].data[i] ^= 0b10000000
+				assert.False(t, proof.ValidateSequence(&tree.(data).nodes[tree.Depth()-2][9], &tree.(data).nodes[tree.Depth()-2][31], tree.Root()))
+				// Reset the right proof
+				proof.(BatchedProofData).rightPath[currentLvl].data[i] ^= 0b10000000
+			}
+		}
 	}
 }
 
@@ -67,9 +112,9 @@ func TestNegativeValidateLeafs(t *testing.T) {
 				// Note that modifying the most significant bits of the last byte will still result in failure even tough those bits should never be set
 				proof.(BatchedProofData).leftPath[currentLvl].data[i] ^= 0b10000000
 				assert.False(t, proof.ValidateLeafs(getLeafs(t, 16, 22-16+1), 16, tree))
-
 				// Revert the modification of the left proof and try the right proof
 				proof.(BatchedProofData).leftPath[currentLvl].data[i] ^= 0b10000000
+
 				assert.True(t, proof.ValidateLeafs(getLeafs(t, 16, 22-16+1), 16, tree))
 				proof.(BatchedProofData).rightPath[currentLvl].data[i] ^= 0b10000000
 				assert.False(t, proof.ValidateLeafs(getLeafs(t, 16, 22-16+1), 16, tree))
@@ -78,4 +123,14 @@ func TestNegativeValidateLeafs(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestNegativeErrorInLeaf(t *testing.T) {
+	tree := getTree(t, 234)
+	proof, err := tree.ConstructBatchedProof(tree.Depth()-1, 53, tree.Depth()-1, 56)
+	assert.Nil(t, err)
+	assert.True(t, proof.ValidateLeafs(getLeafs(t, 53, 56-53+1), 53, tree))
+	// Modify a leaf
+	tree.(data).nodes[tree.Depth()-1][56].data[0] ^= 0b00100000
+	assert.False(t, proof.ValidateLeafs(getLeafs(t, 53, 56-53+1), 53, tree))
 }

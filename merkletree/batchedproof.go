@@ -2,16 +2,17 @@ package merkletree
 
 import "github.com/filecoin-project/go-data-segment/util"
 
+// BatchedMerkleProof represents a Merkle proof of a sequence of leafs
 type BatchedMerkleProof interface {
+	// LeftProof returns the underlying, full, proof of the left-most element proven in the batch
+	LeftProof() MerkleProof
+	// RightProof returns the underlying, full, proof of the right-most element proven in the batch
+	RightProof() MerkleProof
 	// ValidateSequence ensures the correctness of the proof of a sequence of subtrees against the root of a Merkle tree
 	ValidateSequence(firstSubtree *Node, secondSubtree *Node, root *Node) bool
 	// ValidateLeafs ensures the correctness of the proof of a sequence of leafs against a Merkle tree.
 	// startIdx indicates the index in the tree of the left-most leaf contained in the sequence leafs
 	ValidateLeafs(leafs [][]byte, startIdx int, tree MerkleTree) bool
-	// LeftProof returns the underlying, full, proof of the left-most element proven in the batch
-	LeftProof() MerkleProof
-	// RightProof returns the underlying, full, proof of the right-most element proven in the batch
-	RightProof() MerkleProof
 }
 
 type BatchedProofFactory func() BatchedMerkleProof
@@ -88,15 +89,15 @@ func (b BatchedProofData) ValidateLeafs(leafs [][]byte, startIdx int, tree Merkl
 	for i, leaf := range leafs {
 		hashedLeafs[i] = *truncatedHash(leaf)
 	}
-	// Check the batched proof from the edges of the leafs
-	if !b.ValidateSequence(&hashedLeafs[0], &hashedLeafs[len(hashedLeafs)-1], tree.Root()) {
-		return false
-	}
-	// Also check that each hashed leaf in the tree matches the input
+	// Check that each hashed leaf in the tree matches the input
 	for i, hashedLeaf := range hashedLeafs {
 		if hashedLeaf != tree.Leafs()[startIdx+i] {
 			return false
 		}
+	}
+	// Also check the batched proof from the edges of the leafs
+	if !b.ValidateSequence(&hashedLeafs[0], &hashedLeafs[len(hashedLeafs)-1], tree.Root()) {
+		return false
 	}
 	return true
 }

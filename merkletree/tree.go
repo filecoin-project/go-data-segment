@@ -9,9 +9,9 @@ import (
 	"reflect"
 )
 
-const digestBits = 254
 const digestBytes = 32
 
+// MerkleTree represents a Merkle tree which can be used to construct proof of containment for either leafs, subtrees or a sequence of leafs (subtrees)
 type MerkleTree interface {
 	// Depth returns the Depth of the tree. A single-node tree has Depth 1
 	Depth() int
@@ -44,15 +44,17 @@ type Node struct {
 	data [digestBytes]byte
 }
 
-func NewBareTree(elements int) MerkleTree {
+// NewBareTree allocates that memory needed to construct a tree with a specific amount of leafs
+func NewBareTree(leafs int) MerkleTree {
 	var tree data
-	tree.nodes = make([][]Node, 1+util.Log2Ceil(elements))
-	for i := 0; i <= util.Log2Ceil(elements); i++ {
+	tree.nodes = make([][]Node, 1+util.Log2Ceil(leafs))
+	for i := 0; i <= util.Log2Ceil(leafs); i++ {
 		tree.nodes[i] = make([]Node, 1<<i)
 	}
 	return tree
 }
 
+// GrowTree constructs a Merkle from a list of leafData, the data of a given leaf is represented as a byte slice
 func GrowTree(leafData [][]byte) (MerkleTree, error) {
 	var tree MerkleTree
 	if leafData == nil || len(leafData) == 0 {
@@ -62,6 +64,7 @@ func GrowTree(leafData [][]byte) (MerkleTree, error) {
 	return growTreeHashedLeafs(leafLevel), nil
 }
 
+// growTreeHashedLeafs constructs a tree from leafs nodes, i.e. leaf data that has been hashed to construct a Node
 func growTreeHashedLeafs(leafs []Node) MerkleTree {
 	tree := NewBareTree(len(leafs))
 	// Set the leaf nodes
@@ -92,18 +95,22 @@ func (d data) Depth() int {
 	return len(d.nodes)
 }
 
+// LeafCount returns the amount of leafs in the tree
 func (d data) LeafCount() int {
 	return len(d.nodes[len(d.nodes)-1])
 }
 
+// Root returns a pointer to the root node
 func (d data) Root() *Node {
 	return &d.nodes[0][0]
 }
 
+// Leafs return a slice consisting of all the leaf nodes, i.e. leaf data that has been hashed into a Node structure
 func (d data) Leafs() []Node {
 	return d.nodes[len(d.nodes)-1]
 }
 
+// ValidateFromLeafs validates the structure of this Merkle tree, given the raw data elements the tree was constructed from
 func (d data) ValidateFromLeafs(leafs [][]byte) bool {
 	tree, err := GrowTree(leafs)
 	if err != nil {
@@ -113,11 +120,14 @@ func (d data) ValidateFromLeafs(leafs [][]byte) bool {
 	return reflect.DeepEqual(d, tree)
 }
 
+// Validate returns true of this tree has been constructed correctly from the leafs (hashed data)
 func (d data) Validate() bool {
 	tree := growTreeHashedLeafs(d.nodes[d.Depth()-1])
 	return reflect.DeepEqual(d.nodes, tree.(data).nodes)
 }
 
+// ConstructProof constructs a proof that a node at level lvl and index idx within that level, is contained in the tree.
+// The root is in level 0 and the left-most node in a given level is indexed 0.
 func (d data) ConstructProof(lvl int, idx int) (MerkleProof, error) {
 	if lvl < 1 || lvl >= d.Depth() {
 		log.Println("level is either below 1 or bigger than the tree supports")
@@ -148,6 +158,10 @@ func (d data) ConstructProof(lvl int, idx int) (MerkleProof, error) {
 	return ProofData{path: proof, lvl: lvl, idx: idx}, nil
 }
 
+// ConstructBatchedProof constructs a proof that a sequence of leafs are contained in the tree. Either through a subtree or a (hashed) leaf.
+// The proof contains everything captured by the node in leftLvl level at index leftIdx up to and INCLUDING everything
+// contained by the node in rightLvl level and rightIdx index.
+// The root is in level 0 and the left-most node in a given level is indexed 0.
 func (d data) ConstructBatchedProof(leftLvl int, leftIdx int, rightLvl int, rightIdx int) (BatchedMerkleProof, error) {
 	var factory BatchedProofFactory = CreateEmptyBatchedProof
 	if leftLvl < 1 || leftLvl >= d.Depth() || rightLvl < 1 || rightLvl >= d.Depth() {
@@ -170,7 +184,7 @@ func (d data) ConstructBatchedProof(leftLvl int, leftIdx int, rightLvl int, righ
 	return CreateBatchedProof(leftProof, rightProof), nil
 }
 
-// Returns the index of the sibling
+// getSiblingIdx returns the index of the sibling
 func getSiblingIdx(idx int) int {
 	if idx%2 == 0 {
 		// If the index is even, then the node to the right should be returned
@@ -181,6 +195,7 @@ func getSiblingIdx(idx int) int {
 	}
 }
 
+// computeNode computes a new internal node in a tree, from its left and right children
 func computeNode(left *Node, right *Node) *Node {
 	toHash := make([]byte, 2*digestBytes)
 	copy(toHash, (*left).data[:])

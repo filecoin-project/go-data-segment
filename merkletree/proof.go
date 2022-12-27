@@ -1,5 +1,6 @@
 package merkletree
 
+// MerkleProof represents a Merkle proof to a single leaf in a Merkle tree
 type MerkleProof interface {
 	// Path returns the nodes in the proof, starting level 1 (the children of the root)
 	Path() []Node
@@ -24,23 +25,29 @@ type ProofData struct {
 	idx int
 }
 
+// Path returns the nodes in the path of the proof.
+// The first node, is in level 1. I.e. the level below the root
 func (d ProofData) Path() []Node {
 	return d.path
 }
 
+// Level returns the level in the tree which the node this proof validates, is located
 func (d ProofData) Level() int {
 	return d.lvl
 }
 
+// Index returns the index of the node this proof validates, within the level returned by Level()
 func (d ProofData) Index() int {
 	return d.idx
 }
 
+// ValidateLeaf validates that the data given as input is contained in a Merkle tree with a specific root
 func (d ProofData) ValidateLeaf(data []byte, root *Node) bool {
 	leaf := truncatedHash(data)
 	return d.ValidateSubtree(leaf, root)
 }
 
+// ValidateSubtree validates that a subtree is contained in the in a Merkle tree with a given root
 func (d ProofData) ValidateSubtree(subtree *Node, root *Node) bool {
 	currentNode := subtree
 	currentIdx := d.idx
