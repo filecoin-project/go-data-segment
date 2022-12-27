@@ -3,7 +3,7 @@ package fr32
 const BitsNeeded = 254
 const BytesNeeded = 32
 
-type Fr32Array interface {
+type InternalType interface {
 	[]byte | [BytesNeeded]byte
 }
 
