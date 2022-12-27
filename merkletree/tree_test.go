@@ -1,7 +1,8 @@
-package merkleTree
+package merkletree
 
 import (
 	"encoding/hex"
+	"github.com/filecoin-project/go-data-segment/util"
 	"github.com/stretchr/testify/assert"
 	"testing"
 )
@@ -27,13 +28,13 @@ func TestGrowTreeSunshine(t *testing.T) {
 	assert.Nil(t, err)
 
 	assert.Equal(t, 2, tree.Depth())
-	assert.Equal(t, 2, tree.Leafs())
-	assert.Equal(t, 2, len(tree.(TreeData).nodes))
-	assert.Equal(t, 1, len(tree.(TreeData).nodes[0]))
-	assert.Equal(t, 2, len(tree.(TreeData).nodes[1]))
-	assert.Equal(t, expectedLeaf, tree.(TreeData).nodes[1][0].data[:])
-	assert.Equal(t, expectedLeaf, tree.(TreeData).nodes[1][1].data[:])
-	assert.Equal(t, expectedRoot, (*tree.GetRoot()).data[:])
+	assert.Equal(t, 2, tree.LeafCount())
+	assert.Equal(t, 2, len(tree.(data).nodes))
+	assert.Equal(t, 1, len(tree.(data).nodes[0]))
+	assert.Equal(t, 2, len(tree.(data).nodes[1]))
+	assert.Equal(t, expectedLeaf, tree.(data).nodes[1][0].data[:])
+	assert.Equal(t, expectedLeaf, tree.(data).nodes[1][1].data[:])
+	assert.Equal(t, expectedRoot, (*tree.Root()).data[:])
 }
 
 func TestGrowTreeOdd(t *testing.T) {
@@ -55,26 +56,26 @@ func TestGrowTreeOdd(t *testing.T) {
 	assert.Nil(t, err)
 
 	assert.Equal(t, 3, tree.Depth())
-	assert.Equal(t, 3, tree.Leafs())
-	assert.Equal(t, 3, len(tree.(TreeData).nodes))
-	assert.Equal(t, 1, len(tree.(TreeData).nodes[0]))
-	assert.Equal(t, 2, len(tree.(TreeData).nodes[1]))
-	assert.Equal(t, 3, len(tree.(TreeData).nodes[2]))
-	assert.Equal(t, expectedLeaf, tree.(TreeData).nodes[2][0].data[:])
-	assert.Equal(t, expectedLeaf, tree.(TreeData).nodes[2][1].data[:])
-	assert.Equal(t, expectedLeaf, tree.(TreeData).nodes[2][2].data[:])
-	assert.Equal(t, expectedLeftMiddleNode, tree.(TreeData).nodes[1][0].data[:])
-	assert.Equal(t, expectedRightMiddleNode, tree.(TreeData).nodes[1][1].data[:])
-	assert.Equal(t, expectedRoot, (*tree.GetRoot()).data[:])
+	assert.Equal(t, 3, tree.LeafCount())
+	assert.Equal(t, 3, len(tree.(data).nodes))
+	assert.Equal(t, 1, len(tree.(data).nodes[0]))
+	assert.Equal(t, 2, len(tree.(data).nodes[1]))
+	assert.Equal(t, 3, len(tree.(data).nodes[2]))
+	assert.Equal(t, expectedLeaf, tree.(data).nodes[2][0].data[:])
+	assert.Equal(t, expectedLeaf, tree.(data).nodes[2][1].data[:])
+	assert.Equal(t, expectedLeaf, tree.(data).nodes[2][2].data[:])
+	assert.Equal(t, expectedLeftMiddleNode, tree.(data).nodes[1][0].data[:])
+	assert.Equal(t, expectedRightMiddleNode, tree.(data).nodes[1][1].data[:])
+	assert.Equal(t, expectedRoot, (*tree.Root()).data[:])
 }
 
 func TestGrowTreeSoak(t *testing.T) {
 	for amount := 4; amount < 125; amount++ {
 		tree := getTree(t, amount)
 
-		assert.Equal(t, 1+log2Ceil(amount), tree.Depth())
-		// Leafs should have "amount" elements
-		assert.Equal(t, amount, tree.Leafs())
+		assert.Equal(t, 1+util.Log2Ceil(amount), tree.Depth())
+		// LeafCount should have "amount" elements
+		assert.Equal(t, amount, tree.LeafCount())
 	}
 }
 
@@ -85,9 +86,9 @@ func TestConstructProof(t *testing.T) {
 	proof, err := tree.ConstructProof(tree.Depth()-1, 55)
 	assert.Nil(t, err)
 
-	assert.Equal(t, proof.GetLevel(), log2Ceil(tree.Leafs()))
-	assert.Equal(t, proof.GetIndex(), 55)
-	assert.Equal(t, len(proof.GetPath()), tree.Depth()-1)
+	assert.Equal(t, proof.Level(), util.Log2Ceil(tree.LeafCount()))
+	assert.Equal(t, proof.Index(), 55)
+	assert.Equal(t, len(proof.Path()), tree.Depth()-1)
 }
 
 func TestValidateLeafSunshine(t *testing.T) {
@@ -97,13 +98,13 @@ func TestValidateLeafSunshine(t *testing.T) {
 		// Construct a proof of a leaf node
 		proof, err := tree.ConstructProof(tree.Depth()-1, 0)
 		assert.Nil(t, err)
-		assert.True(t, proof.ValidateLeaf(getLeaf(t, 0), tree.GetRoot()))
+		assert.True(t, proof.ValidateLeaf(getLeaf(t, 0), tree.Root()))
 		proof, err = tree.ConstructProof(tree.Depth()-1, amount-1)
 		assert.Nil(t, err)
-		assert.True(t, proof.ValidateLeaf(getLeaf(t, amount-1), tree.GetRoot()))
+		assert.True(t, proof.ValidateLeaf(getLeaf(t, amount-1), tree.Root()))
 		proof, err = tree.ConstructProof(tree.Depth()-1, amount/2-5)
 		assert.Nil(t, err)
-		assert.True(t, proof.ValidateLeaf(getLeaf(t, amount/2-5), tree.GetRoot()))
+		assert.True(t, proof.ValidateLeaf(getLeaf(t, amount/2-5), tree.Root()))
 	}
 }
 
@@ -114,15 +115,15 @@ func TestNegativeValidateLeaf(t *testing.T) {
 		// Construct a proof of a leaf node
 		proof, err := tree.ConstructProof(tree.Depth()-1, 4)
 		assert.Nil(t, err)
-		assert.True(t, proof.ValidateLeaf(getLeaf(t, 4), tree.GetRoot()))
+		assert.True(t, proof.ValidateLeaf(getLeaf(t, 4), tree.Root()))
 		for currentLvl := 0; currentLvl < tree.Depth()-1; currentLvl++ {
 			for i := 0; i < digestBytes; i++ {
 				// Corrupt a bit in a node
 				// Note that modifying the most significant bits of the last byte will still result in failure even tough those bits should never be set
-				proof.GetPath()[currentLvl].data[i] ^= 0b10000000
-				assert.False(t, proof.ValidateLeaf(getLeaf(t, 4), tree.GetRoot()))
+				proof.Path()[currentLvl].data[i] ^= 0b10000000
+				assert.False(t, proof.ValidateLeaf(getLeaf(t, 4), tree.Root()))
 				// Reset the proof
-				proof.GetPath()[currentLvl].data[i] ^= 0b10000000
+				proof.Path()[currentLvl].data[i] ^= 0b10000000
 			}
 		}
 	}
@@ -136,17 +137,17 @@ func TestValidateProofSubtree(t *testing.T) {
 			// Test the smallest node in the level
 			proof, err := tree.ConstructProof(lvl, 0)
 			assert.Nil(t, err)
-			assert.True(t, proof.ValidateSubtree(&tree.(TreeData).nodes[lvl][0], tree.GetRoot()))
+			assert.True(t, proof.ValidateSubtree(&tree.(data).nodes[lvl][0], tree.Root()))
 
 			// Test the largest node in the level
-			proof, err = tree.ConstructProof(lvl, len(tree.(TreeData).nodes[lvl])-1)
+			proof, err = tree.ConstructProof(lvl, len(tree.(data).nodes[lvl])-1)
 			assert.Nil(t, err)
-			assert.True(t, proof.ValidateSubtree(&tree.(TreeData).nodes[lvl][len(tree.(TreeData).nodes[lvl])-1], tree.GetRoot()))
+			assert.True(t, proof.ValidateSubtree(&tree.(data).nodes[lvl][len(tree.(data).nodes[lvl])-1], tree.Root()))
 
 			// Test a node in the middle of the level
-			proof, err = tree.ConstructProof(lvl, len(tree.(TreeData).nodes[lvl])/3)
+			proof, err = tree.ConstructProof(lvl, len(tree.(data).nodes[lvl])/3)
 			assert.Nil(t, err)
-			assert.True(t, proof.ValidateSubtree(&tree.(TreeData).nodes[lvl][len(tree.(TreeData).nodes[lvl])/3], tree.GetRoot()))
+			assert.True(t, proof.ValidateSubtree(&tree.(data).nodes[lvl][len(tree.(data).nodes[lvl])/3], tree.Root()))
 		}
 	}
 }
@@ -157,12 +158,12 @@ func TestNegativeValidateSubtree(t *testing.T) {
 		tree := getTree(t, amount)
 		for currentLvl := 1; currentLvl < tree.Depth()-1; currentLvl++ {
 			// Construct a proof of the second to most right node
-			idx := len(tree.(TreeData).nodes[currentLvl]) - 2
+			idx := len(tree.(data).nodes[currentLvl]) - 2
 			proof, err := tree.ConstructProof(currentLvl, idx)
 			assert.Nil(t, err)
 			// Corrupt a bit in a node
-			proof.GetPath()[currentLvl/3].data[0] ^= 0b10000000
-			assert.False(t, proof.ValidateSubtree(&tree.(TreeData).nodes[currentLvl][idx], tree.GetRoot()))
+			proof.Path()[currentLvl/3].data[0] ^= 0b10000000
+			assert.False(t, proof.ValidateSubtree(&tree.(data).nodes[currentLvl][idx], tree.Root()))
 		}
 	}
 }
@@ -190,7 +191,7 @@ func TestNegativeValidate(t *testing.T) {
 		tree := getTree(t, amount)
 
 		// Corrupt a bit in a node
-		tree.(TreeData).nodes[3][3].data[3] ^= 0b10000000
+		tree.(data).nodes[3][3].data[3] ^= 0b10000000
 		assert.False(t, tree.Validate())
 	}
 }
@@ -286,12 +287,6 @@ func TestHashList(t *testing.T) {
 	for i := 0; i < len(input); i++ {
 		assert.Equal(t, expected, result[i].data[:])
 	}
-}
-
-func TestLog2(t *testing.T) {
-	assert.Equal(t, 0, log2Ceil(1))
-	assert.Equal(t, 2, log2Ceil(4))
-	assert.Equal(t, 3, log2Ceil(7))
 }
 
 // HELPER METHODS

@@ -1,4 +1,4 @@
-package merkleTree
+package merkletree
 
 import (
 	"github.com/stretchr/testify/assert"
@@ -15,22 +15,22 @@ func TestValidateSequence(t *testing.T) {
 		// Small amount
 		proof, err := tree.ConstructBatchedProof(tree.Depth()-1, 3, tree.Depth()-1, 4)
 		assert.Nil(t, err)
-		assert.True(t, proof.ValidateSequence(truncatedHash(getLeaf(t, 3)), truncatedHash(getLeaf(t, 4)), tree.GetRoot()))
+		assert.True(t, proof.ValidateSequence(truncatedHash(getLeaf(t, 3)), truncatedHash(getLeaf(t, 4)), tree.Root()))
 
 		// Large amount
 		proof, err = tree.ConstructBatchedProof(tree.Depth()-1, 10, tree.Depth()-2, amount/3)
 		assert.Nil(t, err)
-		assert.True(t, proof.ValidateSequence(truncatedHash(getLeaf(t, 10)), &tree.(TreeData).nodes[tree.Depth()-2][amount/3], tree.GetRoot()))
+		assert.True(t, proof.ValidateSequence(truncatedHash(getLeaf(t, 10)), &tree.(data).nodes[tree.Depth()-2][amount/3], tree.Root()))
 
 		// Right-most subtree
 		proof, err = tree.ConstructBatchedProof(tree.Depth()-3, 0, tree.Depth()-1, amount-1)
 		assert.Nil(t, err)
-		assert.True(t, proof.ValidateSequence(&tree.(TreeData).nodes[tree.Depth()-3][0], truncatedHash(getLeaf(t, amount-1)), tree.GetRoot()))
+		assert.True(t, proof.ValidateSequence(&tree.(data).nodes[tree.Depth()-3][0], truncatedHash(getLeaf(t, amount-1)), tree.Root()))
 
 		// Subtree
 		proof, err = tree.ConstructBatchedProof(tree.Depth()-3, 5, tree.Depth()-2, 1)
 		assert.Nil(t, err)
-		assert.True(t, proof.ValidateSequence(&tree.(TreeData).nodes[tree.Depth()-3][5], &tree.(TreeData).nodes[tree.Depth()-2][1], tree.GetRoot()))
+		assert.True(t, proof.ValidateSequence(&tree.(data).nodes[tree.Depth()-3][5], &tree.(data).nodes[tree.Depth()-2][1], tree.Root()))
 	}
 }
 
