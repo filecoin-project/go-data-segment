@@ -1,7 +1,9 @@
 package merkletree
 
 import (
+	"github.com/filecoin-project/go-data-segment/util"
 	"github.com/stretchr/testify/assert"
+	"reflect"
 	"testing"
 )
 
@@ -20,6 +22,24 @@ func TestValidateLeafSunshine(t *testing.T) {
 		proof, err = tree.ConstructProof(tree.Depth()-1, amount/2-5)
 		assert.Nil(t, err)
 		assert.True(t, proof.ValidateLeaf(getLeaf(t, amount/2-5), tree.Root()))
+	}
+}
+
+func TestProofSerialization(t *testing.T) {
+	testAmounts := []int{2, 3, 4, 55, 555}
+	for _, amount := range testAmounts {
+		tree := getTree(t, amount)
+		proof, errProof := tree.ConstructProof(util.Log2Ceil(amount), 1)
+		assert.Nil(t, errProof)
+		assert.True(t, proof.ValidateSubtree(&tree.(data).nodes[util.Log2Ceil(amount)][1], tree.Root()))
+		encoded, errEnc := proof.Serialize()
+		assert.Nil(t, errEnc)
+		assert.NotNil(t, encoded)
+		decoded, errDec := DeserializeProof(encoded)
+		assert.Nil(t, errDec)
+		assert.NotNil(t, decoded)
+		assert.True(t, proof.ValidateSubtree(&tree.(data).nodes[util.Log2Ceil(amount)][1], tree.Root()))
+		assert.True(t, reflect.DeepEqual(proof, decoded))
 	}
 }
 
@@ -81,4 +101,50 @@ func TestNegativeValidateSubtree(t *testing.T) {
 			assert.False(t, proof.ValidateSubtree(&tree.(data).nodes[currentLvl][idx], tree.Root()))
 		}
 	}
+}
+
+func TestNegativeSerializationProofEmpty(t *testing.T) {
+	_, err := DeserializeProof(nil)
+	assert.NotNil(t, err)
+	_, err = DeserializeProof(make([]byte, 0))
+	assert.NotNil(t, err)
+}
+
+func TestNegativeSerializationProofWrongSize(t *testing.T) {
+	tree := getTree(t, 345)
+	proof, err := tree.ConstructProof(5, 12)
+	assert.Nil(t, err)
+	encoded, err := proof.Serialize()
+	assert.Nil(t, err)
+	// Incorrect size of proof
+	_, errDec := DeserializeProof(encoded[:2*BytesInInt+1])
+	assert.NotNil(t, errDec)
+}
+
+func TestNegativeSerializationProofZeroLevel(t *testing.T) {
+	tree := getTree(t, 345)
+	proof, err := tree.ConstructProof(5, 12)
+	assert.Nil(t, err)
+	encoded, err := proof.Serialize()
+	assert.Nil(t, err)
+	// Set level to 0
+	for i := 0; i < BytesInInt; i++ {
+		encoded[i] = 0b00000000
+	}
+	_, errDec := DeserializeProof(encoded)
+	assert.NotNil(t, errDec)
+}
+
+func TestNegativeSerializationProofNegativeIndex(t *testing.T) {
+	tree := getTree(t, 345)
+	proof, err := tree.ConstructProof(5, 12)
+	assert.Nil(t, err)
+	encoded, err := proof.Serialize()
+	assert.Nil(t, err)
+	// Set level to -1
+	for i := BytesInInt; i < 2*BytesInInt; i++ {
+		encoded[i] = 0b11111111
+	}
+	_, errDec := DeserializeProof(encoded)
+	assert.NotNil(t, errDec)
 }

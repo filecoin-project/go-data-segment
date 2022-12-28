@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"github.com/filecoin-project/go-data-segment/util"
 	"github.com/stretchr/testify/assert"
+	"reflect"
 	"testing"
 )
 
@@ -79,6 +80,22 @@ func TestGrowTreeSoak(t *testing.T) {
 	}
 }
 
+func TestTreeSerialization(t *testing.T) {
+	testAmounts := []int{2, 3, 4, 55, 555}
+	for _, amount := range testAmounts {
+		tree := getTree(t, amount)
+		assert.True(t, tree.Validate())
+		encoded, errEnc := tree.Serialize()
+		assert.Nil(t, errEnc)
+		assert.NotNil(t, encoded)
+		decoded, errDec := DeserializeTree(encoded)
+		assert.Nil(t, errDec)
+		assert.NotNil(t, decoded)
+		assert.True(t, decoded.Validate())
+		assert.True(t, reflect.DeepEqual(tree, decoded))
+	}
+}
+
 func TestConstructProof(t *testing.T) {
 	tree := getTree(t, 130)
 
@@ -119,14 +136,39 @@ func TestNegativeValidate(t *testing.T) {
 	}
 }
 
-func TestFailureGrowTree(t *testing.T) {
+func TestNegativeGrowTree(t *testing.T) {
 	_, err := GrowTree(nil)
 	assert.NotNil(t, err)
 	_, err = GrowTree([][]byte{})
 	assert.NotNil(t, err)
 }
 
-func TestFailureConstructProof(t *testing.T) {
+func TestNegativeSerializationEmptyTree(t *testing.T) {
+	tree := getTree(t, 1)
+	tree.(data).nodes[tree.Depth()-1] = make([]Node, 0)
+	encoded, err := tree.Serialize()
+	assert.Nil(t, err)
+	_, errDec := DeserializeTree(encoded)
+	assert.NotNil(t, errDec)
+}
+
+func TestNegativeSerializationWrongSize(t *testing.T) {
+	tree := getTree(t, 128)
+	tree.(data).nodes[tree.Depth()-2] = make([]Node, 1)
+	encoded, err := tree.Serialize()
+	assert.Nil(t, err)
+	_, errDec := DeserializeTree(encoded)
+	assert.NotNil(t, errDec)
+}
+
+func TestNegativeDeserializationNilTree(t *testing.T) {
+	_, errDec := DeserializeTree(nil)
+	assert.NotNil(t, errDec)
+	_, errDec = DeserializeTree(make([]byte, 0))
+	assert.NotNil(t, errDec)
+}
+
+func TestNegativeConstructProof(t *testing.T) {
 	tree := getTree(t, 20)
 	_, err := tree.ConstructProof(0, 0)
 	assert.NotNil(t, err)
@@ -138,7 +180,7 @@ func TestFailureConstructProof(t *testing.T) {
 	assert.NotNil(t, err)
 }
 
-func TestFailureValidate(t *testing.T) {
+func TestNegativeValidateFromLeafs(t *testing.T) {
 	tree := getTree(t, 20)
 	assert.False(t, tree.ValidateFromLeafs(nil))
 	assert.False(t, tree.ValidateFromLeafs([][]byte{}))
@@ -165,6 +207,7 @@ func TestComputeNode(t *testing.T) {
 	result := computeNode(inputNode, inputNode)
 
 	expected, err := hex.DecodeString("db5bf619105c0640e070e01d925cfe1243cdc742609794eb1018ae9e7284fa1d")
+	assert.Nil(t, err)
 	assert.Nil(t, err)
 
 	assert.Equal(t, expected, result.data[:])

@@ -1,15 +1,21 @@
 package merkletree
 
 import (
+	"bytes"
 	"crypto/sha256"
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"github.com/filecoin-project/go-data-segment/fr32"
 	"github.com/filecoin-project/go-data-segment/util"
 	"log"
 	"reflect"
 )
 
 const digestBytes = 32
+
+// BytesInInt represents the amount of bytes used to encode an int
+const BytesInInt int = 64 / 8
 
 // MerkleTree represents a Merkle tree which can be used to construct proof of containment for either leafs, subtrees or a sequence of leafs (subtrees)
 type MerkleTree interface {
@@ -32,6 +38,8 @@ type MerkleTree interface {
 	ValidateFromLeafs(leafData [][]byte) bool
 	// Validate checks that the Merkle tree is correctly constructed, based on the internal nodes
 	Validate() bool
+	// Serialize serializes the MerkleTree into a byte slice
+	Serialize() ([]byte, error)
 }
 
 type data struct {
@@ -47,11 +55,50 @@ type Node struct {
 // NewBareTree allocates that memory needed to construct a tree with a specific amount of leafs
 func NewBareTree(leafs int) MerkleTree {
 	var tree data
-	tree.nodes = make([][]Node, 1+util.Log2Ceil(leafs))
-	for i := 0; i <= util.Log2Ceil(leafs); i++ {
-		tree.nodes[i] = make([]Node, 1<<i)
+	depth := 1 + util.Log2Ceil(leafs)
+	currentNodes := leafs
+	tree.nodes = make([][]Node, depth)
+	for i := depth - 1; i >= 0; i-- {
+		tree.nodes[i] = make([]Node, currentNodes)
+		// The amount of nodes in the parent level is half, rounded down
+		currentNodes = currentNodes / 2
 	}
 	return tree
+}
+
+// DeserializeTree deserializes a serialized Merkle tree
+// This is done by first reading the amount of leafs as a 64 bit int
+// Then decoding the tree, bottom-up, starting with the leafs as the amount of nodes in one level defines the amount of nodes in its parent level
+// NOTE that correctness of the tree is NOT validated as part of this method
+func DeserializeTree(tree []byte) (MerkleTree, error) {
+	if tree == nil || len(tree) < BytesInInt {
+		log.Println("no tree encoded")
+		return data{}, errors.New("no tree encoded")
+	}
+	lvlSize := int(binary.LittleEndian.Uint64(tree[:BytesInInt]))
+	if lvlSize <= 0 {
+		log.Println(fmt.Printf("amount of leafs must be positive:  %d\n", lvlSize))
+		return data{}, errors.New("amount of leafs must be positive")
+	}
+	decoded := NewBareTree(lvlSize)
+	ctr := BytesInInt
+	// Decode from the leafs
+	for i := decoded.Depth() - 1; i >= 0; i-- {
+		if len(tree) < ctr+fr32.BytesNeeded*lvlSize {
+			log.Println(fmt.Printf("error in tree encoding. Does not contain level %d\n", i))
+			return data{}, errors.New("error in tree encoding")
+		}
+		currentLvl := make([]Node, lvlSize)
+		for j := 0; j < lvlSize; j++ {
+			nodeBytes := (*[fr32.BytesNeeded]byte)(tree[ctr : ctr+fr32.BytesNeeded])
+			currentLvl[j] = Node{data: *nodeBytes}
+			ctr += fr32.BytesNeeded
+		}
+		decoded.(data).nodes[i] = currentLvl
+		// The amount of nodes in the parent level is half, rounded up
+		lvlSize = util.Ceil(lvlSize, 2)
+	}
+	return decoded, nil
 }
 
 // GrowTree constructs a Merkle from a list of leafData, the data of a given leaf is represented as a byte slice
@@ -131,11 +178,11 @@ func (d data) Validate() bool {
 func (d data) ConstructProof(lvl int, idx int) (MerkleProof, error) {
 	if lvl < 1 || lvl >= d.Depth() {
 		log.Println("level is either below 1 or bigger than the tree supports")
-		return ProofData{}, errors.New("level is either below 1 or bigger than the tree supports")
+		return proofData{}, errors.New("level is either below 1 or bigger than the tree supports")
 	}
 	if idx < 0 {
 		log.Println(fmt.Sprintf("the requested index %d is negative", idx))
-		return ProofData{}, errors.New(fmt.Sprintf("the requested index %d is negative", idx))
+		return proofData{}, errors.New(fmt.Sprintf("the requested index %d is negative", idx))
 	}
 	// The proof consists of appropriate siblings up to and including layer 1
 	proof := make([]Node, lvl)
@@ -145,7 +192,7 @@ func (d data) ConstructProof(lvl int, idx int) (MerkleProof, error) {
 		// For error handling check that no index impossibly large is requested
 		if len(d.nodes[currentLvl]) <= currentIdx {
 			log.Println(fmt.Sprintf("the requested index %d on level %d does not exist in the tree", currentIdx, currentLvl))
-			return ProofData{}, errors.New(fmt.Sprintf("the requested index %d on level %d does not exist in the tree", currentIdx, currentLvl))
+			return proofData{}, errors.New(fmt.Sprintf("the requested index %d on level %d does not exist in the tree", currentIdx, currentLvl))
 		}
 		// Only try to store the sibling node when it exists,
 		// if the tree is not complete this might not always be the case
@@ -155,7 +202,7 @@ func (d data) ConstructProof(lvl int, idx int) (MerkleProof, error) {
 		// Set next index to be the parent
 		currentIdx = currentIdx / 2
 	}
-	return ProofData{path: proof, lvl: lvl, idx: idx}, nil
+	return proofData{path: proof, lvl: lvl, idx: idx}, nil
 }
 
 // ConstructBatchedProof constructs a proof that a sequence of leafs are contained in the tree. Either through a subtree or a (hashed) leaf.
@@ -182,6 +229,28 @@ func (d data) ConstructBatchedProof(leftLvl int, leftIdx int, rightLvl int, righ
 		return factory(), err
 	}
 	return CreateBatchedProof(leftProof, rightProof), nil
+}
+
+// Serialize serializes the MerkleTree into a byte slice
+// This is done by first including the amount of leafs as a 64 bit unsigned int
+// Then encode the tree, bottom-up, starting with the leafs as the amount of nodes in one level defines the amount of nodes in its parent level
+// NOTE that correctness of the tree is NOT validated as part of this method
+func (d data) Serialize() ([]byte, error) {
+	buf := new(bytes.Buffer)
+	err := binary.Write(buf, binary.LittleEndian, uint64(d.LeafCount()))
+	if err != nil {
+		log.Println("could not write the leaf count")
+		return nil, err
+	}
+	// Encode from the leafs to make decoding easier
+	for i := d.Depth() - 1; i >= 0; i-- {
+		err = binary.Write(buf, binary.LittleEndian, d.nodes[i])
+		if err != nil {
+			log.Println(fmt.Printf("could not write layer %d", i))
+			return nil, err
+		}
+	}
+	return buf.Bytes(), nil
 }
 
 // getSiblingIdx returns the index of the sibling

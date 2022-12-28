@@ -81,7 +81,7 @@ func (b BatchedProofData) getSubproof(subPath []Node, lvl int, idx int) MerklePr
 	fullPath := make([]Node, len(b.commonPath)+len(subPath))
 	copy(fullPath, b.commonPath)
 	copy(fullPath[len(b.commonPath):], subPath)
-	return ProofData{path: fullPath, lvl: lvl, idx: idx}
+	return proofData{path: fullPath, lvl: lvl, idx: idx}
 }
 
 func (b BatchedProofData) ValidateLeafs(leafs [][]byte, startIdx int, tree MerkleTree) bool {

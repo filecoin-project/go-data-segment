@@ -1,7 +1,18 @@
 package merkletree
 
+import (
+	"bytes"
+	"encoding/binary"
+	"errors"
+	"fmt"
+	"github.com/filecoin-project/go-data-segment/fr32"
+	"log"
+)
+
 // MerkleProof represents a Merkle proof to a single leaf in a Merkle tree
 type MerkleProof interface {
+	// Serialize serializes the proof into a byte slice
+	Serialize() ([]byte, error)
 	// Path returns the nodes in the proof, starting level 1 (the children of the root)
 	Path() []Node
 	// Level returns the level in the tree of the node in the tree which the proof validates.
@@ -16,7 +27,7 @@ type MerkleProof interface {
 	ValidateSubtree(subtree *Node, root *Node) bool
 }
 
-type ProofData struct {
+type proofData struct {
 	path []Node
 	// lvl indicates the level in the Merkle tree where root has level 0
 	lvl int
@@ -25,30 +36,96 @@ type ProofData struct {
 	idx int
 }
 
+// DeserializeProof deserializes a serialized proof
+// This is done by first decoding the index of the node in the proof with the level first and then the index.
+// Then the nodes on the verification path are decoded, starting from level 1
+// NOTE that correctness of the proof is NOT validated as part of this method
+func DeserializeProof(proof []byte) (MerkleProof, error) {
+	if proof == nil || len(proof) < 2*BytesInInt {
+		log.Println("no proof encoded")
+		return proofData{}, errors.New("no proof encoded")
+	}
+	lvl := int(binary.LittleEndian.Uint64(proof[:BytesInInt]))
+	if lvl <= 0 {
+		log.Println(fmt.Printf("level must be a positive number:  %d\n", lvl))
+		return proofData{}, errors.New("level must be a positive number")
+	}
+	idx := int(binary.LittleEndian.Uint64(proof[BytesInInt : 2*BytesInInt]))
+	if idx < 0 {
+		log.Println(fmt.Printf("index cannot be negative: %d\n", lvl))
+		return proofData{}, errors.New("index cannot be negative")
+	}
+	nodes := (len(proof) - 2*BytesInInt) / fr32.BytesNeeded
+	if lvl > nodes || (len(proof)-2*BytesInInt)%fr32.BytesNeeded != 0 {
+		log.Println(fmt.Printf("proof not properly encoded. Contains %d nodes and validates element at level %d\n", nodes, lvl))
+		return proofData{}, errors.New("proof not properly encoded")
+	}
+	decoded := make([]Node, nodes)
+	ctr := 2 * BytesInInt
+	for i := 0; i < nodes; i++ {
+		nodeBytes := (*[fr32.BytesNeeded]byte)(proof[ctr : ctr+fr32.BytesNeeded])
+		decoded[i] = Node{data: *nodeBytes}
+		ctr += fr32.BytesNeeded
+	}
+	return proofData{
+		path: decoded,
+		lvl:  lvl,
+		idx:  idx,
+	}, nil
+}
+
+// Serialize serializes the proof into a byte slice
+// This is done by first encoding the index of the node in the proof with the level first and then the index.
+// Then the nodes on the verification path are encoded, starting from level 1
+// NOTE that correctness of the proof is NOT validated as part of this method
+func (d proofData) Serialize() ([]byte, error) {
+	buf := new(bytes.Buffer)
+	// TODO can we make any general size assumptions to avoid 128 bits for encoding the index
+	// Encode level and index as 64 bit unsigned ints
+	err := binary.Write(buf, binary.LittleEndian, uint64(d.Level()))
+	if err != nil {
+		log.Println("could not write the leaf count")
+		return nil, err
+	}
+	err = binary.Write(buf, binary.LittleEndian, uint64(d.Index()))
+	if err != nil {
+		log.Println("could not write the leaf count")
+		return nil, err
+	}
+	for i := 0; i < len(d.Path()); i++ {
+		err := binary.Write(buf, binary.LittleEndian, d.Path()[i].data)
+		if err != nil {
+			log.Println(fmt.Printf("could not write layer %d", i))
+			return nil, err
+		}
+	}
+	return buf.Bytes(), nil
+}
+
 // Path returns the nodes in the path of the proof.
 // The first node, is in level 1. I.e. the level below the root
-func (d ProofData) Path() []Node {
+func (d proofData) Path() []Node {
 	return d.path
 }
 
 // Level returns the level in the tree which the node this proof validates, is located
-func (d ProofData) Level() int {
+func (d proofData) Level() int {
 	return d.lvl
 }
 
 // Index returns the index of the node this proof validates, within the level returned by Level()
-func (d ProofData) Index() int {
+func (d proofData) Index() int {
 	return d.idx
 }
 
 // ValidateLeaf validates that the data given as input is contained in a Merkle tree with a specific root
-func (d ProofData) ValidateLeaf(data []byte, root *Node) bool {
+func (d proofData) ValidateLeaf(data []byte, root *Node) bool {
 	leaf := truncatedHash(data)
 	return d.ValidateSubtree(leaf, root)
 }
 
 // ValidateSubtree validates that a subtree is contained in the in a Merkle tree with a given root
-func (d ProofData) ValidateSubtree(subtree *Node, root *Node) bool {
+func (d proofData) ValidateSubtree(subtree *Node, root *Node) bool {
 	currentNode := subtree
 	currentIdx := d.idx
 	var parent *Node
