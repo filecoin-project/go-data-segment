@@ -55,10 +55,10 @@ func TestNegativeValidateLeaf(t *testing.T) {
 			for i := 0; i < digestBytes; i++ {
 				// Corrupt a bit in a node
 				// Note that modifying the most significant bits of the last byte will still result in failure even tough those bits should never be set
-				proof.Path()[currentLvl].data[i] ^= 0b10000000
+				proof.Path()[currentLvl].Data[i] ^= 0b10000000
 				assert.False(t, proof.ValidateLeaf(getLeaf(t, 4), tree.Root()))
 				// Reset the proof
-				proof.Path()[currentLvl].data[i] ^= 0b10000000
+				proof.Path()[currentLvl].Data[i] ^= 0b10000000
 			}
 		}
 	}
@@ -97,7 +97,7 @@ func TestNegativeValidateSubtree(t *testing.T) {
 			proof, err := tree.ConstructProof(currentLvl, idx)
 			assert.Nil(t, err)
 			// Corrupt a bit in a node
-			proof.Path()[currentLvl/3].data[0] ^= 0b10000000
+			proof.Path()[currentLvl/3].Data[0] ^= 0b10000000
 			assert.False(t, proof.ValidateSubtree(&tree.(data).nodes[currentLvl][idx], tree.Root()))
 		}
 	}

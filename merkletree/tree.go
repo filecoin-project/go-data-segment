@@ -34,7 +34,7 @@ type MerkleTree interface {
 	// That is, if leftLvl, or rightLvl, is not the leaf-level, then the proof is of the entire subtree from leftLvl at leftIdx to rightLvl at rightIdx
 	// Level 0 is the root and index 0 is the left-most node in a level.
 	ConstructBatchedProof(leftLvl int, leftIdx int, rightLvl int, rightIdx int) (BatchedMerkleProof, error)
-	// ValidateFromLeafs checks that the Merkle tree is correctly constructed based on all the leaf data
+	// ValidateFromLeafs checks that the Merkle tree is correctly constructed based on all the leaf Data
 	ValidateFromLeafs(leafData [][]byte) bool
 	// Validate checks that the Merkle tree is correctly constructed, based on the internal nodes
 	Validate() bool
@@ -49,7 +49,7 @@ type data struct {
 }
 
 type Node struct {
-	data [digestBytes]byte
+	Data [digestBytes]byte
 }
 
 // NewBareTree allocates that memory needed to construct a tree with a specific amount of leafs
@@ -77,7 +77,7 @@ func DeserializeTree(tree []byte) (MerkleTree, error) {
 	}
 	lvlSize := int(binary.LittleEndian.Uint64(tree[:BytesInInt]))
 	if lvlSize <= 0 {
-		log.Println(fmt.Printf("amount of leafs must be positive:  %d\n", lvlSize))
+		log.Println(fmt.Sprintf("amount of leafs must be positive:  %d", lvlSize))
 		return data{}, errors.New("amount of leafs must be positive")
 	}
 	decoded := NewBareTree(lvlSize)
@@ -85,13 +85,13 @@ func DeserializeTree(tree []byte) (MerkleTree, error) {
 	// Decode from the leafs
 	for i := decoded.Depth() - 1; i >= 0; i-- {
 		if len(tree) < ctr+fr32.BytesNeeded*lvlSize {
-			log.Println(fmt.Printf("error in tree encoding. Does not contain level %d\n", i))
+			log.Println(fmt.Sprintf("error in tree encoding. Does not contain level %d", i))
 			return data{}, errors.New("error in tree encoding")
 		}
 		currentLvl := make([]Node, lvlSize)
 		for j := 0; j < lvlSize; j++ {
 			nodeBytes := (*[fr32.BytesNeeded]byte)(tree[ctr : ctr+fr32.BytesNeeded])
-			currentLvl[j] = Node{data: *nodeBytes}
+			currentLvl[j] = Node{Data: *nodeBytes}
 			ctr += fr32.BytesNeeded
 		}
 		decoded.(data).nodes[i] = currentLvl
@@ -101,7 +101,7 @@ func DeserializeTree(tree []byte) (MerkleTree, error) {
 	return decoded, nil
 }
 
-// GrowTree constructs a Merkle from a list of leafData, the data of a given leaf is represented as a byte slice
+// GrowTree constructs a Merkle from a list of leafData, the Data of a given leaf is represented as a byte slice
 func GrowTree(leafData [][]byte) (MerkleTree, error) {
 	var tree MerkleTree
 	if leafData == nil || len(leafData) == 0 {
@@ -128,7 +128,7 @@ func growTreeHashedLeafs(leafs []Node) MerkleTree {
 		// Handle the edge case where the tree is not complete, i.e. there is an odd number of leafs
 		// This is done by hashing the content of the node and letting it be its own parent
 		if len(preLevel)%2 == 1 {
-			currentLevel[util.Ceil(len(preLevel), 2)-1] = *truncatedHash(preLevel[len(preLevel)-1].data[:])
+			currentLevel[util.Ceil(len(preLevel), 2)-1] = *TruncatedHash(preLevel[len(preLevel)-1].Data[:])
 		}
 		tree.(data).nodes[level] = currentLevel
 		preLevel = currentLevel
@@ -152,12 +152,12 @@ func (d data) Root() *Node {
 	return &d.nodes[0][0]
 }
 
-// Leafs return a slice consisting of all the leaf nodes, i.e. leaf data that has been hashed into a Node structure
+// Leafs return a slice consisting of all the leaf nodes, i.e. leaf Data that has been hashed into a Node structure
 func (d data) Leafs() []Node {
 	return d.nodes[len(d.nodes)-1]
 }
 
-// ValidateFromLeafs validates the structure of this Merkle tree, given the raw data elements the tree was constructed from
+// ValidateFromLeafs validates the structure of this Merkle tree, given the raw Data elements the tree was constructed from
 func (d data) ValidateFromLeafs(leafs [][]byte) bool {
 	tree, err := GrowTree(leafs)
 	if err != nil {
@@ -167,7 +167,7 @@ func (d data) ValidateFromLeafs(leafs [][]byte) bool {
 	return reflect.DeepEqual(d, tree)
 }
 
-// Validate returns true of this tree has been constructed correctly from the leafs (hashed data)
+// Validate returns true of this tree has been constructed correctly from the leafs (hashed Data)
 func (d data) Validate() bool {
 	tree := growTreeHashedLeafs(d.nodes[d.Depth()-1])
 	return reflect.DeepEqual(d.nodes, tree.(data).nodes)
@@ -246,7 +246,7 @@ func (d data) Serialize() ([]byte, error) {
 	for i := d.Depth() - 1; i >= 0; i-- {
 		err = binary.Write(buf, binary.LittleEndian, d.nodes[i])
 		if err != nil {
-			log.Println(fmt.Printf("could not write layer %d", i))
+			log.Println(fmt.Sprintf("could not write layer %d", i))
 			return nil, err
 		}
 	}
@@ -267,22 +267,22 @@ func getSiblingIdx(idx int) int {
 // computeNode computes a new internal node in a tree, from its left and right children
 func computeNode(left *Node, right *Node) *Node {
 	toHash := make([]byte, 2*digestBytes)
-	copy(toHash, (*left).data[:])
-	copy(toHash[digestBytes:], (*right).data[:])
-	return truncatedHash(toHash)
+	copy(toHash, (*left).Data[:])
+	copy(toHash[digestBytes:], (*right).Data[:])
+	return TruncatedHash(toHash)
 }
 
 func hashList(input [][]byte) []Node {
 	digests := make([]Node, len(input))
 	for i := 0; i < len(input); i++ {
-		digests[i] = *truncatedHash(input[i])
+		digests[i] = *TruncatedHash(input[i])
 	}
 	return digests
 }
 
-func truncatedHash(data []byte) *Node {
-	digst := sha256.Sum256(data)
-	digst[(256/8)-1] &= 0b00111111
-	node := Node{digst}
+func TruncatedHash(data []byte) *Node {
+	digest := sha256.Sum256(data)
+	digest[(256/8)-1] &= 0b00111111
+	node := Node{digest}
 	return &node
 }
