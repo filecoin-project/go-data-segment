@@ -47,24 +47,24 @@ func DeserializeProof(proof []byte) (MerkleProof, error) {
 	}
 	lvl := int(binary.LittleEndian.Uint64(proof[:BytesInInt]))
 	if lvl <= 0 {
-		log.Println(fmt.Printf("level must be a positive number:  %d\n", lvl))
+		log.Println(fmt.Sprintf("level must be a positive number:  %d", lvl))
 		return proofData{}, errors.New("level must be a positive number")
 	}
 	idx := int(binary.LittleEndian.Uint64(proof[BytesInInt : 2*BytesInInt]))
 	if idx < 0 {
-		log.Println(fmt.Printf("index cannot be negative: %d\n", lvl))
+		log.Println(fmt.Sprintf("index cannot be negative: %d", lvl))
 		return proofData{}, errors.New("index cannot be negative")
 	}
 	nodes := (len(proof) - 2*BytesInInt) / fr32.BytesNeeded
 	if lvl > nodes || (len(proof)-2*BytesInInt)%fr32.BytesNeeded != 0 {
-		log.Println(fmt.Printf("proof not properly encoded. Contains %d nodes and validates element at level %d\n", nodes, lvl))
+		log.Println(fmt.Sprintf("proof not properly encoded. Contains %d nodes and validates element at level %d", nodes, lvl))
 		return proofData{}, errors.New("proof not properly encoded")
 	}
 	decoded := make([]Node, nodes)
 	ctr := 2 * BytesInInt
 	for i := 0; i < nodes; i++ {
 		nodeBytes := (*[fr32.BytesNeeded]byte)(proof[ctr : ctr+fr32.BytesNeeded])
-		decoded[i] = Node{data: *nodeBytes}
+		decoded[i] = Node{Data: *nodeBytes}
 		ctr += fr32.BytesNeeded
 	}
 	return proofData{
@@ -93,9 +93,9 @@ func (d proofData) Serialize() ([]byte, error) {
 		return nil, err
 	}
 	for i := 0; i < len(d.Path()); i++ {
-		err := binary.Write(buf, binary.LittleEndian, d.Path()[i].data)
+		err := binary.Write(buf, binary.LittleEndian, d.Path()[i].Data)
 		if err != nil {
-			log.Println(fmt.Printf("could not write layer %d", i))
+			log.Println(fmt.Sprintf("could not write layer %d", i))
 			return nil, err
 		}
 	}
@@ -118,9 +118,9 @@ func (d proofData) Index() int {
 	return d.idx
 }
 
-// ValidateLeaf validates that the data given as input is contained in a Merkle tree with a specific root
+// ValidateLeaf validates that the Data given as input is contained in a Merkle tree with a specific root
 func (d proofData) ValidateLeaf(data []byte, root *Node) bool {
-	leaf := truncatedHash(data)
+	leaf := TruncatedHash(data)
 	return d.ValidateSubtree(leaf, root)
 }
 
@@ -135,9 +135,9 @@ func (d proofData) ValidateSubtree(subtree *Node, root *Node) bool {
 		// If the node is all-0 then it means it does not exist
 		// It is fine to assume this "magic" array since all nodes will be hash digests and so the all-0 string
 		// will only happen with negligible probability
-		if sibling.data == [digestBytes]byte{} {
+		if sibling.Data == [digestBytes]byte{} {
 			// In case the node does not exist, the only child will be hashed
-			parent = truncatedHash(currentNode.data[:])
+			parent = TruncatedHash(currentNode.Data[:])
 		} else {
 			// If the sibling is "right" then we must hash currentNode first
 			if sibIdx%2 == 1 {
@@ -150,7 +150,7 @@ func (d proofData) ValidateSubtree(subtree *Node, root *Node) bool {
 		currentIdx = currentIdx / 2
 	}
 	// Validate the root against the tree
-	if parent.data != root.data {
+	if parent.Data != root.Data {
 		return false
 	}
 	return true

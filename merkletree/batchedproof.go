@@ -87,7 +87,7 @@ func (b BatchedProofData) getSubproof(subPath []Node, lvl int, idx int) MerklePr
 func (b BatchedProofData) ValidateLeafs(leafs [][]byte, startIdx int, tree MerkleTree) bool {
 	hashedLeafs := make([]Node, len(leafs))
 	for i, leaf := range leafs {
-		hashedLeafs[i] = *truncatedHash(leaf)
+		hashedLeafs[i] = *TruncatedHash(leaf)
 	}
 	// Check that each hashed leaf in the tree matches the input
 	for i, hashedLeaf := range hashedLeafs {

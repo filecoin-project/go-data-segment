@@ -33,9 +33,9 @@ func TestGrowTreeSunshine(t *testing.T) {
 	assert.Equal(t, 2, len(tree.(data).nodes))
 	assert.Equal(t, 1, len(tree.(data).nodes[0]))
 	assert.Equal(t, 2, len(tree.(data).nodes[1]))
-	assert.Equal(t, expectedLeaf, tree.(data).nodes[1][0].data[:])
-	assert.Equal(t, expectedLeaf, tree.(data).nodes[1][1].data[:])
-	assert.Equal(t, expectedRoot, (*tree.Root()).data[:])
+	assert.Equal(t, expectedLeaf, tree.(data).nodes[1][0].Data[:])
+	assert.Equal(t, expectedLeaf, tree.(data).nodes[1][1].Data[:])
+	assert.Equal(t, expectedRoot, (*tree.Root()).Data[:])
 }
 
 func TestGrowTreeOdd(t *testing.T) {
@@ -62,12 +62,12 @@ func TestGrowTreeOdd(t *testing.T) {
 	assert.Equal(t, 1, len(tree.(data).nodes[0]))
 	assert.Equal(t, 2, len(tree.(data).nodes[1]))
 	assert.Equal(t, 3, len(tree.(data).nodes[2]))
-	assert.Equal(t, expectedLeaf, tree.(data).nodes[2][0].data[:])
-	assert.Equal(t, expectedLeaf, tree.(data).nodes[2][1].data[:])
-	assert.Equal(t, expectedLeaf, tree.(data).nodes[2][2].data[:])
-	assert.Equal(t, expectedLeftMiddleNode, tree.(data).nodes[1][0].data[:])
-	assert.Equal(t, expectedRightMiddleNode, tree.(data).nodes[1][1].data[:])
-	assert.Equal(t, expectedRoot, (*tree.Root()).data[:])
+	assert.Equal(t, expectedLeaf, tree.(data).nodes[2][0].Data[:])
+	assert.Equal(t, expectedLeaf, tree.(data).nodes[2][1].Data[:])
+	assert.Equal(t, expectedLeaf, tree.(data).nodes[2][2].Data[:])
+	assert.Equal(t, expectedLeftMiddleNode, tree.(data).nodes[1][0].Data[:])
+	assert.Equal(t, expectedRightMiddleNode, tree.(data).nodes[1][1].Data[:])
+	assert.Equal(t, expectedRoot, (*tree.Root()).Data[:])
 }
 
 func TestGrowTreeSoak(t *testing.T) {
@@ -131,7 +131,7 @@ func TestNegativeValidate(t *testing.T) {
 		tree := getTree(t, amount)
 
 		// Corrupt a bit in a node
-		tree.(data).nodes[3][3].data[3] ^= 0b10000000
+		tree.(data).nodes[3][3].Data[3] ^= 0b10000000
 		assert.False(t, tree.Validate())
 	}
 }
@@ -193,54 +193,54 @@ func TestNegativeValidateFromLeafs(t *testing.T) {
 // TestTruncatedHash is tested against SHA256 test vector for the empty input
 func TestTruncatedHash(t *testing.T) {
 	var input [0]byte
-	node := truncatedHash(input[:])
+	node := TruncatedHash(input[:])
 	// SHA256 empty input
 	expected := [256 / 8]byte{0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14, 0x9a, 0xfb, 0xf4, 0xc8, 0x99, 0x6f, 0xb9, 0x24, 0x27, 0xae, 0x41, 0xe4, 0x64, 0x9b, 0x93, 0x4c, 0xa4, 0x95, 0x99, 0x1b, 0x78, 0x52, 0xb8, 0x55}
 	expected[256/8-1] &= 0b00111111
 
-	assert.Equal(t, expected, node.data)
+	assert.Equal(t, expected, node.Data)
 }
 
 func TestComputeNode(t *testing.T) {
 	var rawInput [0]byte
-	inputNode := truncatedHash(rawInput[:])
+	inputNode := TruncatedHash(rawInput[:])
 	result := computeNode(inputNode, inputNode)
 
 	expected, err := hex.DecodeString("db5bf619105c0640e070e01d925cfe1243cdc742609794eb1018ae9e7284fa1d")
 	assert.Nil(t, err)
 	assert.Nil(t, err)
 
-	assert.Equal(t, expected, result.data[:])
+	assert.Equal(t, expected, result.Data[:])
 }
 
 func TestComputeNodeFullInput(t *testing.T) {
 	// Note most significant bit of last byte is NOT set
 	singletonInput, err := hex.DecodeString("038051e9c324393bd1ca1978dd0952c2aa3742ca4f1bd5cd4611cea83892d302")
 	assert.Nil(t, err)
-	nodeInput := Node{data: *(*[digestBytes]byte)(singletonInput)}
+	nodeInput := Node{Data: *(*[digestBytes]byte)(singletonInput)}
 	result := computeNode(&nodeInput, &nodeInput)
 
 	// Truncated hash digest of input nodes (which are each truncated to 254 bits)
 	expected, err := hex.DecodeString("90a4a4c485b44abecda2c404e4a56df371c9f7c6f23f396f4c63903acf65d638")
 	assert.Nil(t, err)
-	assert.Equal(t, expected, result.data[:])
+	assert.Equal(t, expected, result.Data[:])
 }
 
 func TestTruncatedHashTruncation(t *testing.T) {
-	// RC4.55 test data, note the two least significant bits have been truncated
+	// RC4.55 test Data, note the two least significant bits have been truncated
 	truncatedInput, err := hex.DecodeString("de188941a3375d3a8a061e67576e926dc71a7fa3f0cceb97452b4d3227965f9ea8cc75076d9fb9c5417aa5cb30fc22198b34982dbb621e")
 	assert.Nil(t, err)
 
-	truncatedHash := truncatedHash(truncatedInput)
+	truncatedHash := TruncatedHash(truncatedInput)
 	// Truncated hash digest of input nodes (which are each truncated to 254 bits)
 	expected, err := hex.DecodeString("ab54eaeefe01cd1396247efa4ac59029b4c44c1729f5200f0693645d427db502")
 	assert.Nil(t, err)
-	assert.Equal(t, expected[digestBytes-1]&0b00111111, truncatedHash.data[digestBytes-1])
-	assert.Equal(t, expected, truncatedHash.data[:])
+	assert.Equal(t, expected[digestBytes-1]&0b00111111, truncatedHash.Data[digestBytes-1])
+	assert.Equal(t, expected, truncatedHash.Data[:])
 }
 
 func TestHashList(t *testing.T) {
-	// RC4.55 test data
+	// RC4.55 test Data
 	singletonInput, err := hex.DecodeString("de188941a3375d3a8a061e67576e926dc71a7fa3f0cceb97452b4d3227965f9ea8cc75076d9fb9c5417aa5cb30fc22198b34982dbb629e")
 	assert.Nil(t, err)
 	input := [][]byte{singletonInput, singletonInput}
@@ -251,7 +251,7 @@ func TestHashList(t *testing.T) {
 	assert.Nil(t, err)
 
 	for i := 0; i < len(input); i++ {
-		assert.Equal(t, expected, result[i].data[:])
+		assert.Equal(t, expected, result[i].Data[:])
 	}
 }
 
