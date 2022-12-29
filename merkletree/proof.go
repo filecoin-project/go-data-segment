@@ -39,27 +39,19 @@ type proofData struct {
 // DeserializeProof deserializes a serialized proof
 // This is done by first decoding the index of the node in the proof with the level first and then the index.
 // Then the nodes on the verification path are decoded, starting from level 1
-// NOTE that correctness of the proof is NOT validated as part of this method
+// NOTE that correctness, nor the structure of the proof is NOT validated as part of this method
 func DeserializeProof(proof []byte) (MerkleProof, error) {
-	if proof == nil || len(proof) < 2*BytesInInt {
+	if proof == nil {
 		log.Println("no proof encoded")
-		return proofData{}, errors.New("no proof encoded")
-	}
-	lvl := int(binary.LittleEndian.Uint64(proof[:BytesInInt]))
-	if lvl <= 0 {
-		log.Println(fmt.Sprintf("level must be a positive number:  %d", lvl))
-		return proofData{}, errors.New("level must be a positive number")
-	}
-	idx := int(binary.LittleEndian.Uint64(proof[BytesInInt : 2*BytesInInt]))
-	if idx < 0 {
-		log.Println(fmt.Sprintf("index cannot be negative: %d", lvl))
-		return proofData{}, errors.New("index cannot be negative")
+		return nil, errors.New("no proof encoded")
 	}
 	nodes := (len(proof) - 2*BytesInInt) / fr32.BytesNeeded
-	if lvl > nodes || (len(proof)-2*BytesInInt)%fr32.BytesNeeded != 0 {
-		log.Println(fmt.Sprintf("proof not properly encoded. Contains %d nodes and validates element at level %d", nodes, lvl))
-		return proofData{}, errors.New("proof not properly encoded")
+	if (len(proof)-2*BytesInInt)%fr32.BytesNeeded != 0 {
+		log.Printf("proof not properly encoded. Lengths is %d\n", len(proof))
+		return nil, errors.New("proof not properly encoded")
 	}
+	lvl := int(binary.LittleEndian.Uint64(proof[:BytesInInt]))
+	idx := int(binary.LittleEndian.Uint64(proof[BytesInInt : 2*BytesInInt]))
 	decoded := make([]Node, nodes)
 	ctr := 2 * BytesInInt
 	for i := 0; i < nodes; i++ {
@@ -67,11 +59,16 @@ func DeserializeProof(proof []byte) (MerkleProof, error) {
 		decoded[i] = Node{Data: *nodeBytes}
 		ctr += fr32.BytesNeeded
 	}
-	return proofData{
+	res := proofData{
 		path: decoded,
 		lvl:  lvl,
 		idx:  idx,
-	}, nil
+	}
+	if !res.validateProofStructure() {
+		log.Println("the data does not contain a valid proof")
+		return nil, errors.New("the data does not contain a valid proof")
+	}
+	return res, nil
 }
 
 // Serialize serializes the proof into a byte slice
@@ -126,6 +123,14 @@ func (d proofData) ValidateLeaf(data []byte, root *Node) bool {
 
 // ValidateSubtree validates that a subtree is contained in the in a Merkle tree with a given root
 func (d proofData) ValidateSubtree(subtree *Node, root *Node) bool {
+	// Validate the structure first to avoid panics
+	if !d.validateProofStructure() {
+		return false
+	}
+	return d.validateProof(subtree, root)
+}
+
+func (d proofData) validateProof(subtree *Node, root *Node) bool {
 	currentNode := subtree
 	currentIdx := d.idx
 	var parent *Node
@@ -151,6 +156,22 @@ func (d proofData) ValidateSubtree(subtree *Node, root *Node) bool {
 	}
 	// Validate the root against the tree
 	if parent.Data != root.Data {
+		return false
+	}
+	return true
+}
+
+func (d proofData) validateProofStructure() bool {
+	if d.Level() <= 0 {
+		log.Printf("level must be positive, it is %d\n", d.Level())
+		return false
+	}
+	if d.Index() < 0 {
+		log.Printf("index cannot be negative, it is %d\n", d.Level())
+		return false
+	}
+	if d.Level() > len(d.Path()) {
+		log.Printf("level %d is greater than the length of the path in the proof: %d\n", d.Level(), len(d.Path()))
 		return false
 	}
 	return true

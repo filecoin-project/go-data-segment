@@ -17,23 +17,10 @@ type Structure struct {
 	commDA fr32.Fr32
 	// size of the aggregator's data in bytes
 	size int
-	// pos indicates the 0-indexed (compact) position of the client's data within the aggregator's data
-	pos int
-	// idxDs indicates the 0-indexed position of data segment
-	idxDs int
 	// proofSubtree proof of inclusion of the client's data in the data aggregator's Merkle tree (includes position information)
 	proofSubtree merkletree.MerkleProof
 	// proofDs leaf inclusion proof (includes position information)
 	proofDs merkletree.MerkleProof
-}
-
-type InternalType interface {
-	position | int64
-}
-
-type position struct {
-	lvl int
-	idx int
 }
 
 // Serialize encodes a data segment Structure into a byte array
@@ -52,16 +39,6 @@ func Serialize(structure Structure) ([]byte, error) {
 		log.Println("could not write size")
 		return nil, err
 	}
-	err = binary.Write(buf, binary.LittleEndian, uint64(structure.pos))
-	if err != nil {
-		log.Println("could not write position")
-		return nil, err
-	}
-	err = binary.Write(buf, binary.LittleEndian, uint64(structure.idxDs))
-	if err != nil {
-		log.Println("could not write index")
-		return nil, err
-	}
 	err = serializeProof(buf, structure.proofSubtree)
 	if err != nil {
 		return nil, err
@@ -76,14 +53,6 @@ func Serialize(structure Structure) ([]byte, error) {
 func validateStructure(structure Structure) bool {
 	if structure.size <= 0 {
 		log.Println("size of aggregator's data must be positive")
-		return false
-	}
-	if structure.idxDs < 0 {
-		log.Println("index in data segment cannot be negative")
-		return false
-	}
-	if structure.pos < 0 {
-		log.Println("position in data segment cannot be negative")
 		return false
 	}
 	return true
@@ -120,10 +89,10 @@ func Deserialize(encoded []byte) (Structure, error) {
 	ctr += fr32.BytesNeeded
 	size := int(binary.LittleEndian.Uint64(encoded[ctr : ctr+BytesInInt]))
 	ctr += BytesInInt
-	pos := int(binary.LittleEndian.Uint64(encoded[ctr : ctr+BytesInInt]))
-	ctr += BytesInInt
-	idxDs := int(binary.LittleEndian.Uint64(encoded[ctr : ctr+BytesInInt]))
-	ctr += BytesInInt
+	if size <= 0 {
+		log.Println("size of aggregator's data must be positive")
+		return Structure{}, errors.New("size of aggregator's data must be positive")
+	}
 	subtreeProof, subtreeProofSize, err := deserializeProof(encoded[ctr:])
 	if err != nil || subtreeProofSize <= 0 {
 		return Structure{}, errors.New("no data segment structure encoded")
@@ -136,8 +105,6 @@ func Deserialize(encoded []byte) (Structure, error) {
 	structure := Structure{
 		commDA:       fr32.Fr32{Data: *commDA},
 		size:         size,
-		pos:          pos,
-		idxDs:        idxDs,
 		proofSubtree: subtreeProof,
 		proofDs:      proofDs,
 	}
