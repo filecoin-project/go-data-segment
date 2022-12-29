@@ -1,6 +1,8 @@
 package datasegment
 
 import (
+	"bytes"
+	"encoding/binary"
 	"github.com/filecoin-project/go-data-segment/fr32"
 	"github.com/filecoin-project/go-data-segment/merkletree"
 	"github.com/stretchr/testify/assert"
@@ -55,6 +57,37 @@ func TestSerializationIntegration(t *testing.T) {
 	assert.Equal(t, 1234, decoded.size)
 }
 
-func TestNegativeSerialization(t *testing.T) {
+func TestNegativeSerializationSize(t *testing.T) {
+	inc := Structure{
+		commDA:       fr32.Fr32{},
+		size:         0,
+		proofSubtree: nil,
+		proofDs:      nil,
+	}
+	serialized, err := Serialize(inc)
+	assert.NotNil(t, err)
+	assert.Nil(t, serialized)
+}
 
+func TestNegativeDeserializeProofEmpty(t *testing.T) {
+	_, err := Deserialize(nil)
+	assert.NotNil(t, err)
+	_, err = Deserialize([]byte{})
+	assert.NotNil(t, err)
+}
+
+func TestNegativeDeserializeProofSize(t *testing.T) {
+	buf := new(bytes.Buffer)
+	err := binary.Write(buf, binary.LittleEndian, uint64(0))
+	assert.Nil(t, err)
+	proof, size, err := deserializeProof(buf.Bytes())
+	assert.Nil(t, proof)
+	assert.Equal(t, -1, size)
+	assert.NotNil(t, err)
+}
+
+func TestNegativeDeserializeProofSize2(t *testing.T) {
+	encoded := make([]byte, fr32.BytesNeeded+5*BytesInInt)
+	_, err := Deserialize(encoded)
+	assert.NotNil(t, err)
 }
