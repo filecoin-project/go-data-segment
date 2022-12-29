@@ -14,7 +14,7 @@ func TestSerialization(t *testing.T) {
 	commDA := fr32.Fr32{}
 	proofSub := merkletree.NewDummyProof(4, 5, &root)
 	proofDs := merkletree.NewDummyProof(6, 4233, &root)
-	structure := Structure{commDA: commDA, size: 1234, pos: 3, idxDs: 4, proofSubtree: proofSub, proofDs: proofDs}
+	structure := Structure{commDA: commDA, size: 1234, proofSubtree: proofSub, proofDs: proofDs}
 	encoded, errEnc := Serialize(structure)
 	assert.Nil(t, errEnc)
 	assert.NotNil(t, encoded)
@@ -29,8 +29,6 @@ func TestSerialization(t *testing.T) {
 	assert.Equal(t, proofDs.Level(), decoded.proofDs.Level())
 	assert.Equal(t, proofDs.Index(), decoded.proofDs.Index())
 	assert.Equal(t, 1234, decoded.size)
-	assert.Equal(t, 3, decoded.pos)
-	assert.Equal(t, 4, decoded.idxDs)
 }
 
 func TestSerializationIntegration(t *testing.T) {
@@ -43,7 +41,7 @@ func TestSerializationIntegration(t *testing.T) {
 	assert.Nil(t, err)
 	proofDs, err := tree.ConstructProof(tree.Depth()-1, 3)
 	assert.Nil(t, err)
-	structure := Structure{commDA: commDA, size: 1234, pos: 3, idxDs: 4, proofSubtree: proofSub, proofDs: proofDs}
+	structure := Structure{commDA: commDA, size: 1234, proofSubtree: proofSub, proofDs: proofDs}
 	encoded, errEnc := Serialize(structure)
 	assert.Nil(t, errEnc)
 	assert.NotNil(t, encoded)
@@ -55,6 +53,8 @@ func TestSerializationIntegration(t *testing.T) {
 	assert.True(t, reflect.DeepEqual(proofDs, decoded.proofDs))
 	assert.Equal(t, proofSub.Path(), decoded.proofSubtree.Path())
 	assert.Equal(t, 1234, decoded.size)
-	assert.Equal(t, 3, decoded.pos)
-	assert.Equal(t, 4, decoded.idxDs)
+}
+
+func TestNegativeSerialization(t *testing.T) {
+
 }
