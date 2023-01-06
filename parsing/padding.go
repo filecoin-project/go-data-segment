@@ -16,7 +16,7 @@ func Pad(unpaddedData []byte) ([]fr32.Fr32, error) {
 	paddedData := make([]fr32.Fr32, chunkCount, chunkCount)
 	bitIdx := 0
 	for i := 0; i < chunkCount; i++ {
-		unpaddedChunk := getChunk(bitIdx, unpaddedData)
+		unpaddedChunk := retrieveChunk(bitIdx, unpaddedData)
 		paddedData[i] = fr32.Fr32{Data: shiftChunk(bitIdx, unpaddedChunk)}
 		// Update bitIdx to the byte we need to start at which is 254 in
 		bitIdx += fr32.BitsNeeded
@@ -25,7 +25,7 @@ func Pad(unpaddedData []byte) ([]fr32.Fr32, error) {
 }
 
 // Return a chunk containing the next segment of unpadded data (without copying data), it will be a chunk of either 32 or 33 bytes
-func getChunk(bitIdx int, unpaddedData []byte) []byte {
+func retrieveChunk(bitIdx int, unpaddedData []byte) []byte {
 	var upperIdx int
 	// Find the largest byte we can access in the unpadded array, in case we are in the end of the array
 	if (bitIdx/8)+fr32.BytesNeeded+1 < len(unpaddedData) {
