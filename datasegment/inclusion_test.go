@@ -3,12 +3,24 @@ package datasegment
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/hex"
 	"github.com/filecoin-project/go-data-segment/fr32"
 	"github.com/filecoin-project/go-data-segment/merkletree"
 	"github.com/stretchr/testify/assert"
 	"reflect"
 	"testing"
 )
+
+// HELPER METHODS
+func getLeafs(startIdx int, amount int) [][]byte {
+	leafs := make([][]byte, amount)
+	for i := startIdx; i < startIdx+amount; i++ {
+		singletonInput, _ := hex.DecodeString("deadbeef")
+		singletonInput[0] ^= byte(i)
+		leafs[i] = singletonInput
+	}
+	return leafs
+}
 
 // PUBLIC METHODS
 func TestInclusionSerialization(t *testing.T) {
@@ -55,6 +67,20 @@ func TestInclusionSerializationIntegration(t *testing.T) {
 	assert.True(t, reflect.DeepEqual(proofDs, decoded.ProofDs))
 	assert.Equal(t, proofSub.Path(), decoded.ProofSubtree.Path())
 	assert.Equal(t, 1234, decoded.Size)
+}
+
+func TestVerifyEntryInclusion(t *testing.T) {
+	sizeDA := 400
+	offset := 344
+	//sizeDs := 1
+	leafData := getLeafs(0, sizeDA)
+	tree, err := merkletree.GrowTree(leafData)
+	comm := tree.Leafs()[offset]
+	subtreeProof, err := tree.ConstructProof(tree.Depth()-1, offset)
+	assert.Nil(t, err)
+	assert.True(t, VerifyInclusion(&fr32.Fr32{Data: comm.Data}, 2, &fr32.Fr32{Data: tree.Root().Data}, sizeDA, subtreeProof))
+	//entry, err := MakeEntry(&fr32.Fr32{Data: comm.Data}, offset, sizeDs)
+	//assert.Nil(t, err)
 }
 
 // NEGATIVE TESTS

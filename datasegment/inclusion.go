@@ -128,3 +128,42 @@ func deserializeProof(encoded []byte) (merkletree.MerkleProof, int, error) {
 	}
 	return decoded, size, nil
 }
+
+func VerifyInclusion(commDs *fr32.Fr32, sizeDS int, commDA *fr32.Fr32, sizeDA int, proofSubtree merkletree.MerkleProof) bool {
+	element := merkletree.Node{Data: commDs.Data}
+	root := merkletree.Node{Data: commDA.Data}
+	if !proofSubtree.ValidateSubtree(&element, &root) {
+		return false
+	}
+	// TOOD I am unsure what else needs to be validated here, in particular in relation to sizes
+	return true
+}
+
+func VerifyCommEntryInclusion(commEntry *fr32.Fr32, commDA *fr32.Fr32, sizeDA int, proofDs merkletree.MerkleProof, idxDs int) bool {
+	if !VerifyInclusion(commEntry, 2, commDA, sizeDA, proofDs) {
+		return false
+	}
+	lvl, idx := containerPos(idxDs, sizeDA)
+	if lvl != proofDs.Level() || idx != proofDs.Index() {
+		return false
+	}
+	return true
+}
+
+func VerifyEntryInclusion(entry *Entry, commDA *fr32.Fr32, sizeDA int, subtreeProof merkletree.MerkleProof) bool {
+	buf := new(bytes.Buffer)
+	err := serializeFr32Entry(buf, entry)
+	if err != nil {
+		log.Println("could not serialize entry")
+		return false
+	}
+	toHash := buf.Bytes()
+	comm := fr32.Fr32{Data: merkletree.TruncatedHash(toHash).Data}
+	return VerifyCommEntryInclusion(&comm, commDA, sizeDA, subtreeProof, entry.Offset)
+}
+
+// containerPos computes the position of the container proof elements by returning the level first and then the index
+func containerPos(idxDs int, sizeDA int) (int, int) {
+	// TODO figure out how to compute this
+	return 1, 1
+}
