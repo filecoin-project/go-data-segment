@@ -7,32 +7,64 @@ import (
 	"testing"
 )
 
+// HELPER METHODS
+
+func invalidEntry1() *Entry {
+	return &Entry{
+		CommDs:   fr32.Fr32{},
+		Offset:   123,
+		Size:     12222,
+		Checksum: [BytesInChecksum]byte{},
+	}
+}
+func invalidEntry2() *Entry {
+	return &Entry{
+		CommDs:   fr32.Fr32{},
+		Offset:   311,
+		Size:     22221,
+		Checksum: [BytesInChecksum]byte{},
+	}
+}
+
+// makes an index without valid checksums
+func invalidIndex() *indexData {
+	index := indexData{
+		dealSize: 100000,
+		entries:  []*Entry{invalidEntry1(), invalidEntry2()},
+	}
+	return &index
+}
+
 // PUBLIC METHODS
+func TestIndexSerializationValidation(t *testing.T) {
+	comm1 := fr32.Fr32{Data: [fr32.BytesNeeded]byte{1}}
+	comm2 := fr32.Fr32{Data: [fr32.BytesNeeded]byte{2}}
+	entry1, err1 := MakeEntry(&comm1, 123, 1222)
+	assert.Nil(t, err1)
+	entry2, err2 := MakeEntry(&comm2, 132, 342343)
+	assert.Nil(t, err2)
+	index, err3 := MakeIndex([]*Entry{entry1, entry2}, 1000)
+	assert.Nil(t, err3)
+	encoded, err4 := SerializeIndex(index)
+	assert.Nil(t, err4)
+	assert.NotNil(t, encoded)
+	decoded, err5 := DeserializeIndex(encoded)
+	assert.Nil(t, err5)
+	assert.NotNil(t, decoded)
+	assert.True(t, reflect.DeepEqual(index, decoded))
+}
+
+// PRIVATE METHODS
 func TestIndexSerialization(t *testing.T) {
-	entry1 := Entry{
-		CommDs: fr32.Fr32{},
-		Offset: 123,
-		Size:   12222,
-		Check:  Checksum{},
-	}
-	entry2 := Entry{
-		CommDs: fr32.Fr32{},
-		Offset: 311,
-		Size:   22221,
-		Check:  Checksum{},
-	}
-	index, err := MakeIndex([]Entry{entry1, entry2}, 100000)
-	assert.Nil(t, err)
+	index := invalidIndex()
 	assert.Equal(t, 2, index.NumberEntries())
 	assert.Equal(t, 2*64, index.IndexSize())
 	assert.Equal(t, 100000, index.DealSize())
 	assert.Equal(t, 100000-2*64, index.Start())
-	assert.Equal(t, entry1, index.Entry(0))
-	assert.Equal(t, entry2, index.Entry(1))
-	encoded, err := SerializeIndex(index)
+	encoded, err := serializeIndex(index)
 	assert.Nil(t, err)
 	assert.NotNil(t, encoded)
-	decoded, errDec := DeserializeIndex(encoded)
+	decoded, errDec := deserializeIndex(encoded)
 	assert.Nil(t, errDec)
 	assert.NotNil(t, decoded)
 	assert.Equal(t, index.NumberEntries(), decoded.NumberEntries())
@@ -41,10 +73,24 @@ func TestIndexSerialization(t *testing.T) {
 	assert.Equal(t, index.Entry(0), decoded.Entry(0))
 	assert.Equal(t, index.Entry(1), decoded.Entry(1))
 	assert.Equal(t, index.DealSize(), decoded.DealSize())
-	assert.True(t, reflect.DeepEqual(index, decoded))
+	assert.True(t, reflect.DeepEqual(*index, decoded))
 }
 
 // NEGATIVE TESTS
+func TestNegativeMakeEntryError(t *testing.T) {
+	en := invalidEntry1()
+	en, err := MakeEntryWithChecksum(&(en.CommDs), en.Offset, en.Size, &en.Checksum)
+	assert.NotNil(t, err)
+	assert.Nil(t, en)
+}
+
+func TestNegativeMakeIndexError(t *testing.T) {
+	index := invalidIndex()
+	encoded, err := SerializeIndex(index)
+	assert.NotNil(t, err)
+	assert.Nil(t, encoded)
+}
+
 func TestNegativeIndexCreation(t *testing.T) {
 	// Nil
 	index, err := MakeIndex(nil, 15)
@@ -60,7 +106,7 @@ func TestNegativeSerialization(t *testing.T) {
 	assert.Nil(t, serialized)
 
 	// Empty entries
-	data = indexData{dealSize: 15, entries: make([]Entry, 0)}
+	data = indexData{dealSize: 15, entries: make([]*Entry, 0)}
 	serialized, err = SerializeIndex(data)
 	assert.NotNil(t, err)
 	assert.Nil(t, serialized)
@@ -90,54 +136,54 @@ func TestNegativeDeserializationIndexIncorrect(t *testing.T) {
 
 func TestNegativeValidationDealSize(t *testing.T) {
 	// Too small deal
-	entry := Entry{
-		CommDs: fr32.Fr32{},
-		Offset: 123,
-		Size:   12222,
-		Check:  Checksum{},
+	en := Entry{
+		CommDs:   fr32.Fr32{},
+		Offset:   123,
+		Size:     12222,
+		Checksum: [BytesInChecksum]byte{},
 	}
-	index := indexData{-1, []Entry{entry}}
+	index := indexData{-1, []*Entry{&en}}
 	assert.False(t, validateIndexStructure(index))
 }
 
 func TestNegativeValidationEntriesSize(t *testing.T) {
 	// Negative size
-	entry := Entry{
-		CommDs: fr32.Fr32{},
-		Offset: 1,
-		Size:   -100,
-		Check:  Checksum{},
+	en := Entry{
+		CommDs:   fr32.Fr32{},
+		Offset:   1,
+		Size:     -100,
+		Checksum: [BytesInChecksum]byte{},
 	}
-	index := indexData{-1, []Entry{entry}}
+	index := indexData{-1, []*Entry{&en}}
 	assert.False(t, validateIndexStructure(index))
 }
 
 func TestNegativeValidationEntriesOffset(t *testing.T) {
 	// Negative offset
-	entry := Entry{
-		CommDs: fr32.Fr32{},
-		Offset: -1,
-		Size:   324,
-		Check:  Checksum{},
+	en := Entry{
+		CommDs:   fr32.Fr32{},
+		Offset:   -1,
+		Size:     324,
+		Checksum: [BytesInChecksum]byte{},
 	}
-	index := indexData{-1, []Entry{entry}}
+	index := indexData{-1, []*Entry{&en}}
 	assert.False(t, validateIndexStructure(index))
 }
 
 func TestNegativeValidationEntriesAmount(t *testing.T) {
 	// Empty entries
-	index := indexData{-1, make([]Entry, 0)}
+	index := indexData{-1, make([]*Entry, 0)}
 	assert.False(t, validateIndexStructure(index))
 }
 
 func TestNegativeValidationIndexEntriesSize(t *testing.T) {
 	index := indexData{
 		dealSize: 1,
-		entries: []Entry{{
-			CommDs: fr32.Fr32{},
-			Offset: 0,
-			Size:   -1,
-			Check:  Checksum{},
+		entries: []*Entry{{
+			CommDs:   fr32.Fr32{},
+			Offset:   0,
+			Size:     -1,
+			Checksum: [BytesInChecksum]byte{},
 		},
 		}}
 	assert.False(t, validateIndexStructure(index))
@@ -146,17 +192,12 @@ func TestNegativeValidationIndexEntriesSize(t *testing.T) {
 func TestNegativeValidationIndexEntriesOffset(t *testing.T) {
 	index := indexData{
 		dealSize: 1,
-		entries: []Entry{{
-			CommDs: fr32.Fr32{},
-			Offset: -1,
-			Size:   1,
-			Check:  Checksum{},
+		entries: []*Entry{{
+			CommDs:   fr32.Fr32{},
+			Offset:   -1,
+			Size:     1,
+			Checksum: [BytesInChecksum]byte{},
 		},
 		}}
 	assert.False(t, validateIndexStructure(index))
-}
-
-func TestNegativeDeserializeFr32EntrySize(t *testing.T) {
-	_, err := deserializeFr32Entry(make([]byte, entrySize+1))
-	assert.NotNil(t, err)
 }
