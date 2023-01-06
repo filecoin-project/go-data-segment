@@ -2,6 +2,7 @@ package parsing
 
 import (
 	"github.com/filecoin-project/go-data-segment/fr32"
+	"github.com/filecoin-project/go-data-segment/util"
 	"github.com/stretchr/testify/assert"
 	"math/rand"
 	"testing"
@@ -23,7 +24,7 @@ func TestPadAndUnpad(t *testing.T) {
 		assert.Equal(t, randomBytes, unpaddedData[:1001])
 		// Check that unpadded data uses everything in the Fr32 encoding, even those bytes that have resulted in 0 bytes from encoding a weird length paddedData object
 		assert.Equal(t,
-			Ceil(fr32.BitsNeeded*Ceil(1001*8, fr32.BitsNeeded), 8),
+			util.Ceil(fr32.BitsNeeded*util.Ceil(1001*8, fr32.BitsNeeded), 8),
 			len(unpaddedData))
 	}
 }
@@ -80,14 +81,14 @@ func TestUnpadSunshine(t *testing.T) {
 // PRIVATE METHOD TESTS
 func TestGetChunkSunshine(t *testing.T) {
 	unpaddedData := getMonotoneTestData(40)
-	nextChunk := getChunk(0, unpaddedData)
+	nextChunk := retrieveChunk(0, unpaddedData)
 	expected := unpaddedData[:33]
 	assert.Equal(t, expected, nextChunk)
 }
 
 func TestGetChunk2(t *testing.T) {
 	unpaddedData := getMonotoneTestData(40)
-	nextChunk := getChunk(8, unpaddedData)
+	nextChunk := retrieveChunk(8, unpaddedData)
 	expected := unpaddedData[1:34]
 	assert.Equal(t, expected, nextChunk)
 }
@@ -95,7 +96,7 @@ func TestGetChunk2(t *testing.T) {
 func TestGetChunkMiddleOffset(t *testing.T) {
 	unpaddedData := getMonotoneTestData(40)
 	// 30/8 = 3.75
-	nextChunk := getChunk(30, unpaddedData)
+	nextChunk := retrieveChunk(30, unpaddedData)
 	expected := unpaddedData[3:36]
 	assert.Equal(t, expected, nextChunk)
 }
@@ -103,14 +104,14 @@ func TestGetChunkMiddleOffset(t *testing.T) {
 func TestGetChunkOverflow(t *testing.T) {
 	unpaddedData := getMonotoneTestData(40)
 	// 65/8 = 8.125
-	nextChunk := getChunk(65, unpaddedData)
+	nextChunk := retrieveChunk(65, unpaddedData)
 	expected := unpaddedData[8:40]
 	assert.Equal(t, expected, nextChunk)
 }
 
 func TestGetChunkEmpty(t *testing.T) {
 	unpaddedData := []byte{}
-	nextChunk := getChunk(0, unpaddedData)
+	nextChunk := retrieveChunk(0, unpaddedData)
 	assert.Equal(t, []byte{}, nextChunk)
 }
 
@@ -234,7 +235,7 @@ func TestEmptyInputUnpad(t *testing.T) {
  *	HELPER FUNCTIONS
  */
 
-func set1s[ARRAY fr32.Fr32Array](input *ARRAY, startIncludeByte int, stopExclusiveByte int) {
+func set1s[ARRAY fr32.InternalType](input *ARRAY, startIncludeByte int, stopExclusiveByte int) {
 	for i := startIncludeByte; i < stopExclusiveByte; i++ {
 		(*input)[i] = 0b11111111
 	}
