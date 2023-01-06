@@ -80,6 +80,31 @@ type Checksum struct {
 	Data [BytesInChecksum]byte
 }
 
+// serializeFr32Entry uses a buffer to serialize en entry into a byte slice
+func serializeFr32Entry(buf *bytes.Buffer, entry Entry) error {
+	err := binary.Write(buf, binary.LittleEndian, entry.CommDs.Data)
+	if err != nil {
+		log.Println("could not write the commitment of entry")
+		return err
+	}
+	err = binary.Write(buf, binary.LittleEndian, uint64(entry.Offset))
+	if err != nil {
+		log.Printf("could not write Offset %d of entry\n", entry.Offset)
+		return err
+	}
+	err = binary.Write(buf, binary.LittleEndian, uint64(entry.Size))
+	if err != nil {
+		log.Printf("could not write IndexSize %d of entry\n", entry.Size)
+		return err
+	}
+	err = binary.Write(buf, binary.LittleEndian, entry.Check.Data)
+	if err != nil {
+		log.Println("could not write checksum of entry")
+		return err
+	}
+	return nil
+}
+
 // SerializeIndex encodes a data segment Inclusion into a byte array
 func SerializeIndex(index Index) ([]byte, error) {
 	if !validateIndexStructure(index) {
@@ -92,31 +117,41 @@ func SerializeIndex(index Index) ([]byte, error) {
 		return nil, err
 	}
 	for i := 0; i < index.NumberEntries(); i++ {
-		err = binary.Write(buf, binary.LittleEndian, index.Entry(i).CommDs.Data)
+		err = serializeFr32Entry(buf, index.Entry(i))
 		if err != nil {
-			log.Printf("could not write the commitment of entry %d\n", i)
-			return nil, err
-		}
-		err = binary.Write(buf, binary.LittleEndian, uint64(index.Entry(i).Offset))
-		if err != nil {
-			log.Printf("could not write Offset %d of entry %d\n", index.Entry(i).Offset, i)
-			return nil, err
-		}
-		err = binary.Write(buf, binary.LittleEndian, uint64(index.Entry(i).Size))
-		if err != nil {
-			log.Printf("could not write IndexSize %d of index %d\n", index.Entry(i).Size, i)
-			return nil, err
-		}
-		err = binary.Write(buf, binary.LittleEndian, index.Entry(i).Check.Data)
-		if err != nil {
-			log.Printf("could not write checksum of entry %d\n", i)
+			log.Printf("could not write entry %d\n", i)
 			return nil, err
 		}
 	}
 	return buf.Bytes(), nil
 }
 
+// deserializeFr32Entry deserializes a byte slice into an Entry
+func deserializeFr32Entry(encoded []byte) (Entry, error) {
+	if len(encoded) != entrySize {
+		log.Println("no entry encoded")
+		return Entry{}, errors.New("no entry encoded")
+	}
+	ctr := 0
+	commDs := (*[fr32.BytesNeeded]byte)(encoded[ctr : ctr+fr32.BytesNeeded])
+	ctr += fr32.BytesNeeded
+	offset := int(binary.LittleEndian.Uint64(encoded[ctr : ctr+BytesInInt]))
+	ctr += BytesInInt
+	size := int(binary.LittleEndian.Uint64(encoded[ctr : ctr+BytesInInt]))
+	ctr += BytesInInt
+	checksum := (*[BytesInChecksum]byte)(encoded[ctr : ctr+BytesInChecksum])
+	ctr += BytesInChecksum
+	entry := Entry{
+		CommDs: fr32.Fr32{Data: *commDs},
+		Offset: offset,
+		Size:   size,
+		Check:  Checksum{Data: *checksum},
+	}
+	return entry, nil
+}
+
 // DeserializeIndex decodes a byte array into a data segment Index
+// Assumes the index is FR32 padded
 func DeserializeIndex(encoded []byte) (Index, error) {
 	// Check that at least one Entry is included and that the size is appropriate
 	if encoded == nil || len(encoded) < minIndexSize || (len(encoded)-minIndexSize)%entrySize != 0 {
@@ -129,21 +164,13 @@ func DeserializeIndex(encoded []byte) (Index, error) {
 	dealSize := int(binary.LittleEndian.Uint64(encoded[ctr : ctr+BytesInInt]))
 	ctr += BytesInInt
 	for i := 0; i < entries; i++ {
-		commDs := (*[fr32.BytesNeeded]byte)(encoded[ctr : ctr+fr32.BytesNeeded])
-		ctr += fr32.BytesNeeded
-		offset := int(binary.LittleEndian.Uint64(encoded[ctr : ctr+BytesInInt]))
-		ctr += BytesInInt
-		size := int(binary.LittleEndian.Uint64(encoded[ctr : ctr+BytesInInt]))
-		ctr += BytesInInt
-		checksum := (*[BytesInChecksum]byte)(encoded[ctr : ctr+BytesInChecksum])
-		ctr += BytesInChecksum
-		entry := Entry{
-			CommDs: fr32.Fr32{Data: *commDs},
-			Offset: offset,
-			Size:   size,
-			Check:  Checksum{Data: *checksum},
+		var err error
+		decoded[i], err = deserializeFr32Entry(encoded[ctr : ctr+entrySize])
+		if err != nil {
+			log.Printf("could not deserialize entry %d\n", i)
+			return nil, err
 		}
-		decoded[i] = entry
+		ctr += entrySize
 	}
 	return indexData{dealSize: dealSize, entries: decoded}, nil
 }

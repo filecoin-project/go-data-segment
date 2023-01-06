@@ -66,6 +66,28 @@ func TestNegativeSerialization(t *testing.T) {
 	assert.Nil(t, serialized)
 }
 
+func TestNegativeSerializationIndexNil(t *testing.T) {
+	// nil
+	serialized, err := SerializeIndex(nil)
+	assert.NotNil(t, err)
+	assert.Nil(t, serialized)
+}
+
+func TestNegativeDeserializationIndexIncorrect(t *testing.T) {
+	// nil
+	serialized, err := DeserializeIndex(nil)
+	assert.NotNil(t, err)
+	assert.Nil(t, serialized)
+	// too small size
+	serialized, err = DeserializeIndex(make([]byte, minIndexSize-1))
+	assert.NotNil(t, err)
+	assert.Nil(t, serialized)
+	// wrong size
+	serialized, err = DeserializeIndex(make([]byte, minIndexSize+1))
+	assert.NotNil(t, err)
+	assert.Nil(t, serialized)
+}
+
 func TestNegativeValidationDealSize(t *testing.T) {
 	// Too small deal
 	entry := Entry{
@@ -108,9 +130,33 @@ func TestNegativeValidationEntriesAmount(t *testing.T) {
 	assert.False(t, validateIndexStructure(index))
 }
 
-func TestNegativeValidationIndexNil(t *testing.T) {
-	// nil
-	serialized, err := SerializeIndex(nil)
+func TestNegativeValidationIndexEntriesSize(t *testing.T) {
+	index := indexData{
+		dealSize: 1,
+		entries: []Entry{{
+			CommDs: fr32.Fr32{},
+			Offset: 0,
+			Size:   -1,
+			Check:  Checksum{},
+		},
+		}}
+	assert.False(t, validateIndexStructure(index))
+}
+
+func TestNegativeValidationIndexEntriesOffset(t *testing.T) {
+	index := indexData{
+		dealSize: 1,
+		entries: []Entry{{
+			CommDs: fr32.Fr32{},
+			Offset: -1,
+			Size:   1,
+			Check:  Checksum{},
+		},
+		}}
+	assert.False(t, validateIndexStructure(index))
+}
+
+func TestNegativeDeserializeFr32EntrySize(t *testing.T) {
+	_, err := deserializeFr32Entry(make([]byte, entrySize+1))
 	assert.NotNil(t, err)
-	assert.Nil(t, serialized)
 }
