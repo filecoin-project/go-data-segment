@@ -45,8 +45,8 @@ func (d DummyProof) Index() int {
 	return d.idx
 }
 
-// ValidateLeaf validates that the Data given as input is contained in a Merkle tree with a specific root
-func (d DummyProof) ValidateLeaf(data []byte, root *Node) bool {
+// ValidateLeaf validates that the data given as input is contained in a Merkle tree with a specific root
+func (d DummyProof) ValidateLeaf(_ []byte, root *Node) bool {
 	if *root != *d.expectedRoot {
 		return false
 	}
@@ -54,7 +54,7 @@ func (d DummyProof) ValidateLeaf(data []byte, root *Node) bool {
 }
 
 // ValidateSubtree validates that a subtree is contained in the in a Merkle tree with a given root
-func (d DummyProof) ValidateSubtree(subtree *Node, root *Node) bool {
+func (d DummyProof) ValidateSubtree(_ *Node, root *Node) bool {
 	if *root != *d.expectedRoot {
 		return false
 	}

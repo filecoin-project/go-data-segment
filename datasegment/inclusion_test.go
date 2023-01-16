@@ -71,16 +71,55 @@ func TestInclusionSerializationIntegration(t *testing.T) {
 
 func TestVerifyEntryInclusion(t *testing.T) {
 	sizeDA := 400
-	offset := 344
-	//sizeDs := 1
+	offset := 98
 	leafData := getLeafs(0, sizeDA)
-	tree, err := merkletree.GrowTree(leafData)
-	comm := tree.Leafs()[offset]
-	subtreeProof, err := tree.ConstructProof(tree.Depth()-1, offset)
+	dealTree, err := merkletree.GrowTree(leafData)
+	comm := dealTree.Leafs()[offset]
+	// The client's data segment is the leaf at offset
+	subtreeProof, err := dealTree.ConstructProof(dealTree.Depth()-1, offset)
 	assert.Nil(t, err)
-	assert.True(t, VerifyInclusion(&fr32.Fr32{Data: comm.Data}, 2, &fr32.Fr32{Data: tree.Root().Data}, sizeDA, subtreeProof))
-	//entry, err := MakeEntry(&fr32.Fr32{Data: comm.Data}, offset, sizeDs)
-	//assert.Nil(t, err)
+	assert.True(t, VerifyInclusion(&fr32.Fr32{Data: comm.Data}, &fr32.Fr32{Data: dealTree.Root().Data}, subtreeProof))
+}
+
+func TestVerifySegmentInclusion(t *testing.T) {
+	sizeDA := 129
+	offset := 98
+	sizeDs := 1
+	leafData := getLeafs(0, sizeDA)
+	dealTree, err := merkletree.GrowTree(leafData)
+	comm := dealTree.Leafs()[offset]
+	entry, err2 := MakeDataSegmentIdx(&fr32.Fr32{Data: comm.Data}, offset, sizeDs)
+	assert.Nil(t, err2)
+	// We let the client deals be all the leafs
+	sizes := make([]int, sizeDA)
+	for i := range sizes {
+		sizes[i] = 1
+	}
+	incTree, err := MakeInclusionTree(dealTree.Leafs(), sizes, dealTree)
+	assert.Nil(t, err)
+	proofDs, err := MakeIndexProof(incTree, offset, sizeDA, sizeDA)
+	assert.Nil(t, err)
+	assert.True(t, VerifySegDescInclusion(entry, &fr32.Fr32{Data: incTree.Root().Data}, sizeDA, sizeDA, proofDs))
+}
+func TestVerifyInclusionTree(t *testing.T) {
+	sizeDA := 1235
+	offset := 123
+	leafData := getLeafs(0, sizeDA)
+	dealTree, err := merkletree.GrowTree(leafData)
+	comm := dealTree.Leafs()[offset]
+	// We let the client deals be all the leafs
+	sizes := make([]int, sizeDA)
+	for i := range sizes {
+		sizes[i] = 1
+	}
+	incTree, err := MakeInclusionTree(dealTree.Leafs(), sizes, dealTree)
+	assert.Nil(t, err)
+	subtreeProof, err := incTree.ConstructProof(incTree.Depth()-1, offset)
+	assert.Nil(t, err)
+	assert.True(t, VerifyInclusion(&fr32.Fr32{Data: comm.Data}, &fr32.Fr32{Data: incTree.Root().Data}, subtreeProof))
+	proofDs, err := MakeIndexProof(incTree, offset, sizeDA, sizeDA)
+	assert.Nil(t, err)
+	assert.True(t, Validate(&fr32.Fr32{Data: comm.Data}, 1, &fr32.Fr32{Data: incTree.Root().Data}, sizeDA, sizeDA, subtreeProof, proofDs))
 }
 
 // NEGATIVE TESTS
@@ -117,4 +156,8 @@ func TestNegativeInclusionDeserializeProofSize2(t *testing.T) {
 	encoded := make([]byte, minSizeInclusion)
 	_, err := DeserializeInclusion(encoded)
 	assert.NotNil(t, err)
+}
+
+func TestNegativeDealProofWrongHeight(t *testing.T) {
+
 }

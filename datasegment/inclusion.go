@@ -6,8 +6,17 @@ import (
 	"errors"
 	"github.com/filecoin-project/go-data-segment/fr32"
 	"github.com/filecoin-project/go-data-segment/merkletree"
+	"github.com/filecoin-project/go-data-segment/util"
 	"log"
 )
+
+// We use the terminology "deal Tree" to define the tree of actual data being stored by the aggregator in a deal.
+// I.e. its leafs contain all the client's data segments.
+// We use the terminology "index tree" to mean the small (sub) tree which contains all the data segment indices of the client's data segments in its leafs.
+// This tree will have leafs equal to 2 times the amount of data segments included in the deal tree, since a data segment description requires two nodes.
+// We use the term "inclusion tree" to mean the tree encompassing both the deals and the index tree. The index tree will be stored in the right-most position possible
+// where it will still be a properly aligned subtree. I.e. in the right-most corner of the inclusion tree,
+// but potentially with some empty leafs (to the right) in case the amount of data segments in the deal tree is not a 2-power
 
 // BytesInInt represents the amount of bytes used to encode an int
 const BytesInInt int = 64 / 8
@@ -15,13 +24,17 @@ const BytesInInt int = 64 / 8
 // 3 integers includes the IndexSize of the aggregator's data and the size of the two Merkle proofs
 const minSizeInclusion int = fr32.BytesNeeded + 3*BytesInInt
 
+// Inclusion is a proof of a client's data segment being included in a deal.
 type Inclusion struct {
+	// CommDA is a commitment of the aggregator's deal (the root of the deal tree)
 	CommDA fr32.Fr32
-	// Size of the aggregator's data in bytes
+	// Size of the aggregator's data in nodes (leafs). The total amount of bytes is Size*32
 	Size int
-	// ProofSubtree proof of inclusion of the client's data in the data aggregator's Merkle tree (includes position information)
+	// ProofSubtree is proof of inclusion of the client's data segment in the data aggregator's Merkle tree (includes position information)
+	// I.e. a proof that the root node of the subtree containing all the nodes (leafs) of a data segment is contained in CommDA
 	ProofSubtree merkletree.MerkleProof
-	// ProofDs leaf inclusion proof (includes position information)
+	// ProofDs is a proof that the user's data segment is contained in the index of the aggregator's deal.
+	// I.e. a proof that the data segment index constructed from the root of the user's data segment subtree is contained in the index of the deal tree.
 	ProofDs merkletree.MerkleProof
 }
 
@@ -129,41 +142,142 @@ func deserializeProof(encoded []byte) (merkletree.MerkleProof, int, error) {
 	return decoded, size, nil
 }
 
-func VerifyInclusion(commDs *fr32.Fr32, sizeDS int, commDA *fr32.Fr32, sizeDA int, proofSubtree merkletree.MerkleProof) bool {
-	element := merkletree.Node{Data: commDs.Data}
-	root := merkletree.Node{Data: commDA.Data}
-	if !proofSubtree.ValidateSubtree(&element, &root) {
+// Validate verifies that the commitment to a user's data segment, commDs, is included correctly in the inclusion tree.
+// I.e. both the inclusion in the deal tree is verified, along with the inclusion in the index (sub) tree.
+// The method also validates the position of the index and depths in relation to the size of the data segment.
+// commDs is the commitment to the user's data segment. I.e. a node in the deal tree, where the leafs of its subtree contains all the nodes in the user's data segment
+// commDA is the commitment of the aggregator, i.e. the root of the inclusion tree
+// sizeDs is the amount of nodes included in the client's data segment.
+// sizeDA is the amount of nodes included in the deal of the aggregator
+// segments is the amount of client data segments included in the deal
+// proofSubtree is the proof that the client's
+func Validate(commDs *fr32.Fr32, sizeDs int, commDA *fr32.Fr32, sizeDA int, segments int, proofSubtree merkletree.MerkleProof, proofDs merkletree.MerkleProof) bool {
+	// Validate the whole subtree is actually included
+	if !verifySegmentInclusion(segments, sizeDA, sizeDs, proofSubtree.Level()) {
 		return false
 	}
-	// TOOD I am unsure what else needs to be validated here, in particular in relation to sizes
-	return true
-}
-
-func VerifyCommEntryInclusion(commEntry *fr32.Fr32, commDA *fr32.Fr32, sizeDA int, proofDs merkletree.MerkleProof, idxDs int) bool {
-	if !VerifyInclusion(commEntry, 2, commDA, sizeDA, proofDs) {
+	// Validate subtree inclusion
+	if !VerifyInclusion(commDs, commDA, proofSubtree) {
 		return false
 	}
-	lvl, idx := containerPos(idxDs, sizeDA)
-	if lvl != proofDs.Level() || idx != proofDs.Index() {
-		return false
-	}
-	return true
-}
-
-func VerifyEntryInclusion(entry *Entry, commDA *fr32.Fr32, sizeDA int, subtreeProof merkletree.MerkleProof) bool {
-	buf := new(bytes.Buffer)
-	err := serializeFr32Entry(buf, entry)
+	index, err := MakeDataSegmentIdx(commDs, proofSubtree.Index(), sizeDs)
 	if err != nil {
-		log.Println("could not serialize entry")
+		log.Println("could not construct data segment index")
+		return false
+	}
+	if !VerifySegDescInclusion(index, commDA, sizeDA, segments, proofDs) {
+		return false
+	}
+	return true
+}
+
+// verifySegmentInclusion checks that the proof subtree is actually of correct depth when taking into account the size
+// of the data segment and the amount of segments included in the deal.
+// TODO is this actually needed or implicitly assumed that the network checks the merkle tree is correct? Because we need more of the tree to validate this
+func verifySegmentInclusion(segments int, sizeDA int, sizeDs int, proofLvl int) bool {
+	// Compute the expected amount of leaf nodes
+	incLeafs := computeIncTreeLeafs(segments, sizeDA)
+	segmentDepth := util.Log2Ceil(sizeDs)
+	if util.Log2Ceil(incLeafs) != segmentDepth+proofLvl {
+		return false
+	}
+	return true
+}
+
+// VerifyInclusion validates a commitment, comm, in accordance to a proof to a root of a tree
+func VerifyInclusion(comm *fr32.Fr32, root *fr32.Fr32, proof merkletree.MerkleProof) bool {
+	element := merkletree.Node{Data: comm.Data}
+	rootNode := merkletree.Node{Data: root.Data}
+	if !proof.ValidateSubtree(&element, &rootNode) {
+		return false
+	}
+	return true
+}
+
+// VerifySegDescInclusion validates that a data segment index, segDesc, has been included in the index (sub) tree, proofDs
+// and verifies that the position in the index tree is correct according to the amount of data segments included in the deal and the total size of the deal
+// segDesc is the data segment index to validate.
+// sizeDA is the amount of 32 byte notes included in the entire deal
+// segments is the amount of client data segments included in the deal
+// proofDs is the Merkle proof of index inclusion in the inclusion tree to validate
+func VerifySegDescInclusion(segDesc *SegmentDescIdx, commDA *fr32.Fr32, sizeDA int, segments int, proofDs merkletree.MerkleProof) bool {
+	if !validateIndexTreePos(segDesc.Offset, sizeDA, segments, proofDs) {
+		return false
+	}
+	buf := new(bytes.Buffer)
+	err := serializeFr32Entry(buf, segDesc)
+	if err != nil {
+		log.Println("could not serialize segDesc")
 		return false
 	}
 	toHash := buf.Bytes()
 	comm := fr32.Fr32{Data: merkletree.TruncatedHash(toHash).Data}
-	return VerifyCommEntryInclusion(&comm, commDA, sizeDA, subtreeProof, entry.Offset)
+	if !VerifyInclusion(&comm, commDA, proofDs) {
+		return false
+	}
+	return true
 }
 
-// containerPos computes the position of the container proof elements by returning the level first and then the index
-func containerPos(idxDs int, sizeDA int) (int, int) {
-	// TODO figure out how to compute this
-	return 1, 1
+// validateIndexTreePos validates the position of a data segment index in an index (sub) tree, proofDs
+// segmentOffset is the number of the given segment in the deal. 0-indexed
+// sizeDa is the amount of 32 byte nodes in the entire deal.
+// segments is the total amount of segments included in the deal
+func validateIndexTreePos(segmentOffset int, sizeDA int, segments int, proofDs merkletree.MerkleProof) bool {
+	// Validate the level in the index tree
+	incTreeDepth := 1 + util.Log2Ceil(computeIncTreeLeafs(segments, sizeDA))
+	// Check that the proof of the commitment is one level above the leafs, when levels are 0-indexed
+	if proofDs.Level() != incTreeDepth-2 {
+		return false
+	}
+	// Validate the index in the index tree, i.e. that the data segment index commitment is starting in the right leaf in the tree
+	// TODO this might actually be overkill, I cannot see how to do something malicious with this being wrong
+	// futhermore as it is now, the deal offset is directly defined from the index tree proof
+	idxStart := indexStart(segments, sizeDA)
+	// We are checking that the parent to the first index leaf plus the segmentOffset is the same as the index in the proof
+	if (idxStart/2)+segmentOffset != proofDs.Index() {
+		return false
+	}
+	return true
+}
+
+// MakeInclusionTree constructs an inclusion tree based on the deal tree and a list of the nodes that contain all the client segments
+func MakeInclusionTree(segments []merkletree.Node, segmentSizes []int, dealTree merkletree.MerkleTree) (merkletree.MerkleTree, error) {
+	newCapacity := computeIncTreeLeafs(len(segments), len(dealTree.Leafs()))
+	// Make a new leaf level
+	combinedLeafs := make([]merkletree.Node, newCapacity)
+	// And add the old leafs
+	copy(combinedLeafs, dealTree.Leafs())
+	segDescs, err := MakeSegDescs(segments, segmentSizes)
+	if err != nil {
+		return nil, err
+	}
+	// And copy the index leafs to the positions of the right-most subtree that can contain them
+	start := indexStart(len(segments), len(dealTree.Leafs()))
+	copy(combinedLeafs[start:], segDescs)
+	return merkletree.GrowTreeHashedLeafs(combinedLeafs), nil
+}
+
+// MakeIndexProof constructs a data segment proof to the index of the data segment with a given offset in the deal tree
+func MakeIndexProof(inclusionTree merkletree.MerkleTree, offset int, sizeDA int, segments int) (merkletree.MerkleProof, error) {
+	// The node we want to prove membership of is one level above the leafs in the index tree
+	lvl := inclusionTree.Depth() - 2
+	idx := (indexStart(segments, sizeDA) >> 1) + offset
+	return inclusionTree.ConstructProof(lvl, idx)
+}
+
+// indexStart computes the leaf where the first data segment index should be placed
+func indexStart(segments int, sizeDA int) int {
+	// Compute the amount of total leafs in the tree including the index
+	inclusionCapacity := computeIncTreeLeafs(segments, sizeDA)
+	// Compute the size of the index. 2-power to ensure it is a proper subtree. Each segment requires two leaf nodes in the index
+	indexAlign := 1 << util.Log2Ceil(2*segments)
+	// Index is places in the rightmost and smallest subtree it requires
+	return inclusionCapacity - indexAlign
+}
+
+// computeIncTreeLeafs computes the amount of leafs needed in an inclusion tree based on the amount of segments and the amount of 32 byte data elements, sizeDA
+func computeIncTreeLeafs(segments int, sizeDA int) int {
+	// Compute the size of subtree we need for the index, which needs 2 nodes per deal
+	indexTreeLeafs := 1 << util.Log2Ceil(2*segments)
+	return 1 << util.Log2Ceil(sizeDA+indexTreeLeafs)
 }

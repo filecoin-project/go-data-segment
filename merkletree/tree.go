@@ -34,7 +34,7 @@ type MerkleTree interface {
 	// That is, if leftLvl, or rightLvl, is not the leaf-level, then the proof is of the entire subtree from leftLvl at leftIdx to rightLvl at rightIdx
 	// Level 0 is the root and index 0 is the left-most node in a level.
 	ConstructBatchedProof(leftLvl int, leftIdx int, rightLvl int, rightIdx int) (BatchedMerkleProof, error)
-	// ValidateFromLeafs checks that the Merkle tree is correctly constructed based on all the leaf Data
+	// ValidateFromLeafs checks that the Merkle tree is correctly constructed based on all the leafData
 	ValidateFromLeafs(leafData [][]byte) bool
 	// Validate checks that the Merkle tree is correctly constructed, based on the internal nodes
 	Validate() bool
@@ -101,18 +101,18 @@ func DeserializeTree(tree []byte) (MerkleTree, error) {
 	return decoded, nil
 }
 
-// GrowTree constructs a Merkle from a list of leafData, the Data of a given leaf is represented as a byte slice
+// GrowTree constructs a Merkle from a list of leafData, the data of a given leaf is represented as a byte slice
 func GrowTree(leafData [][]byte) (MerkleTree, error) {
 	var tree MerkleTree
 	if leafData == nil || len(leafData) == 0 {
 		return tree, errors.New("empty input")
 	}
 	leafLevel := hashList(leafData)
-	return growTreeHashedLeafs(leafLevel), nil
+	return GrowTreeHashedLeafs(leafLevel), nil
 }
 
-// growTreeHashedLeafs constructs a tree from leafs nodes, i.e. leaf data that has been hashed to construct a Node
-func growTreeHashedLeafs(leafs []Node) MerkleTree {
+// GrowTreeHashedLeafs constructs a tree from leafs nodes, i.e. leaf data that has been hashed to construct a Node
+func GrowTreeHashedLeafs(leafs []Node) MerkleTree {
 	tree := NewBareTree(len(leafs))
 	// Set the leaf nodes
 	tree.(data).nodes[util.Log2Ceil(len(leafs))] = leafs
@@ -152,12 +152,12 @@ func (d data) Root() *Node {
 	return &d.nodes[0][0]
 }
 
-// Leafs return a slice consisting of all the leaf nodes, i.e. leaf Data that has been hashed into a Node structure
+// Leafs return a slice consisting of all the leaf nodes, i.e. leaf data that has been hashed into a Node structure
 func (d data) Leafs() []Node {
 	return d.nodes[len(d.nodes)-1]
 }
 
-// ValidateFromLeafs validates the structure of this Merkle tree, given the raw Data elements the tree was constructed from
+// ValidateFromLeafs validates the structure of this Merkle tree, given the raw data elements the tree was constructed from
 func (d data) ValidateFromLeafs(leafs [][]byte) bool {
 	tree, err := GrowTree(leafs)
 	if err != nil {
@@ -167,9 +167,9 @@ func (d data) ValidateFromLeafs(leafs [][]byte) bool {
 	return reflect.DeepEqual(d, tree)
 }
 
-// Validate returns true of this tree has been constructed correctly from the leafs (hashed Data)
+// Validate returns true of this tree has been constructed correctly from the leafs (hashed data)
 func (d data) Validate() bool {
-	tree := growTreeHashedLeafs(d.nodes[d.Depth()-1])
+	tree := GrowTreeHashedLeafs(d.nodes[d.Depth()-1])
 	return reflect.DeepEqual(d.nodes, tree.(data).nodes)
 }
 

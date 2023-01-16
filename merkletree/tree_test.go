@@ -227,7 +227,7 @@ func TestComputeNodeFullInput(t *testing.T) {
 }
 
 func TestTruncatedHashTruncation(t *testing.T) {
-	// RC4.55 test Data, note the two least significant bits have been truncated
+	// RC4.55 test data, note the two least significant bits have been truncated
 	truncatedInput, err := hex.DecodeString("de188941a3375d3a8a061e67576e926dc71a7fa3f0cceb97452b4d3227965f9ea8cc75076d9fb9c5417aa5cb30fc22198b34982dbb621e")
 	assert.Nil(t, err)
 
@@ -240,7 +240,7 @@ func TestTruncatedHashTruncation(t *testing.T) {
 }
 
 func TestHashList(t *testing.T) {
-	// RC4.55 test Data
+	// RC4.55 test data
 	singletonInput, err := hex.DecodeString("de188941a3375d3a8a061e67576e926dc71a7fa3f0cceb97452b4d3227965f9ea8cc75076d9fb9c5417aa5cb30fc22198b34982dbb629e")
 	assert.Nil(t, err)
 	input := [][]byte{singletonInput, singletonInput}

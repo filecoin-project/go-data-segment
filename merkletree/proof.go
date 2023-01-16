@@ -115,7 +115,7 @@ func (d proofData) Index() int {
 	return d.idx
 }
 
-// ValidateLeaf validates that the Data given as input is contained in a Merkle tree with a specific root
+// ValidateLeaf validates that the data given as input is contained in a Merkle tree with a specific root
 func (d proofData) ValidateLeaf(data []byte, root *Node) bool {
 	leaf := TruncatedHash(data)
 	return d.ValidateSubtree(leaf, root)

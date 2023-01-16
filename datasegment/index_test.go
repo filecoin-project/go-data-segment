@@ -9,16 +9,16 @@ import (
 
 // HELPER METHODS
 
-func invalidEntry1() *Entry {
-	return &Entry{
+func invalidEntry1() *SegmentDescIdx {
+	return &SegmentDescIdx{
 		CommDs:   fr32.Fr32{},
 		Offset:   123,
 		Size:     12222,
 		Checksum: [BytesInChecksum]byte{},
 	}
 }
-func invalidEntry2() *Entry {
-	return &Entry{
+func invalidEntry2() *SegmentDescIdx {
+	return &SegmentDescIdx{
 		CommDs:   fr32.Fr32{},
 		Offset:   311,
 		Size:     22221,
@@ -30,7 +30,7 @@ func invalidEntry2() *Entry {
 func invalidIndex() *indexData {
 	index := indexData{
 		dealSize: 100000,
-		entries:  []*Entry{invalidEntry1(), invalidEntry2()},
+		entries:  []*SegmentDescIdx{invalidEntry1(), invalidEntry2()},
 	}
 	return &index
 }
@@ -39,11 +39,11 @@ func invalidIndex() *indexData {
 func TestIndexSerializationValidation(t *testing.T) {
 	comm1 := fr32.Fr32{Data: [fr32.BytesNeeded]byte{1}}
 	comm2 := fr32.Fr32{Data: [fr32.BytesNeeded]byte{2}}
-	entry1, err1 := MakeEntry(&comm1, 123, 1222)
+	entry1, err1 := MakeDataSegmentIdx(&comm1, 123, 1222)
 	assert.Nil(t, err1)
-	entry2, err2 := MakeEntry(&comm2, 132, 342343)
+	entry2, err2 := MakeDataSegmentIdx(&comm2, 132, 342343)
 	assert.Nil(t, err2)
-	index, err3 := MakeIndex([]*Entry{entry1, entry2}, 1000)
+	index, err3 := MakeIndex([]*SegmentDescIdx{entry1, entry2}, 1000)
 	assert.Nil(t, err3)
 	encoded, err4 := SerializeIndex(index)
 	assert.Nil(t, err4)
@@ -70,8 +70,8 @@ func TestIndexSerialization(t *testing.T) {
 	assert.Equal(t, index.NumberEntries(), decoded.NumberEntries())
 	assert.Equal(t, index.IndexSize(), decoded.IndexSize())
 	assert.Equal(t, index.Start(), decoded.Start())
-	assert.Equal(t, index.Entry(0), decoded.Entry(0))
-	assert.Equal(t, index.Entry(1), decoded.Entry(1))
+	assert.Equal(t, index.SegmentDesc(0), decoded.SegmentDesc(0))
+	assert.Equal(t, index.SegmentDesc(1), decoded.SegmentDesc(1))
 	assert.Equal(t, index.DealSize(), decoded.DealSize())
 	assert.True(t, reflect.DeepEqual(*index, decoded))
 }
@@ -79,7 +79,7 @@ func TestIndexSerialization(t *testing.T) {
 // NEGATIVE TESTS
 func TestNegativeMakeEntryError(t *testing.T) {
 	en := invalidEntry1()
-	en, err := MakeEntryWithChecksum(&(en.CommDs), en.Offset, en.Size, &en.Checksum)
+	en, err := MakeDataSegmentIdxWithChecksum(&(en.CommDs), en.Offset, en.Size, &en.Checksum)
 	assert.NotNil(t, err)
 	assert.Nil(t, en)
 }
@@ -106,7 +106,7 @@ func TestNegativeSerialization(t *testing.T) {
 	assert.Nil(t, serialized)
 
 	// Empty entries
-	data = indexData{dealSize: 15, entries: make([]*Entry, 0)}
+	data = indexData{dealSize: 15, entries: make([]*SegmentDescIdx, 0)}
 	serialized, err = SerializeIndex(data)
 	assert.NotNil(t, err)
 	assert.Nil(t, serialized)
@@ -136,50 +136,50 @@ func TestNegativeDeserializationIndexIncorrect(t *testing.T) {
 
 func TestNegativeValidationDealSize(t *testing.T) {
 	// Too small deal
-	en := Entry{
+	en := SegmentDescIdx{
 		CommDs:   fr32.Fr32{},
 		Offset:   123,
 		Size:     12222,
 		Checksum: [BytesInChecksum]byte{},
 	}
-	index := indexData{-1, []*Entry{&en}}
+	index := indexData{-1, []*SegmentDescIdx{&en}}
 	assert.False(t, validateIndexStructure(index))
 }
 
 func TestNegativeValidationEntriesSize(t *testing.T) {
 	// Negative size
-	en := Entry{
+	en := SegmentDescIdx{
 		CommDs:   fr32.Fr32{},
 		Offset:   1,
 		Size:     -100,
 		Checksum: [BytesInChecksum]byte{},
 	}
-	index := indexData{-1, []*Entry{&en}}
+	index := indexData{-1, []*SegmentDescIdx{&en}}
 	assert.False(t, validateIndexStructure(index))
 }
 
 func TestNegativeValidationEntriesOffset(t *testing.T) {
 	// Negative offset
-	en := Entry{
+	en := SegmentDescIdx{
 		CommDs:   fr32.Fr32{},
 		Offset:   -1,
 		Size:     324,
 		Checksum: [BytesInChecksum]byte{},
 	}
-	index := indexData{-1, []*Entry{&en}}
+	index := indexData{-1, []*SegmentDescIdx{&en}}
 	assert.False(t, validateIndexStructure(index))
 }
 
 func TestNegativeValidationEntriesAmount(t *testing.T) {
 	// Empty entries
-	index := indexData{-1, make([]*Entry, 0)}
+	index := indexData{-1, make([]*SegmentDescIdx, 0)}
 	assert.False(t, validateIndexStructure(index))
 }
 
 func TestNegativeValidationIndexEntriesSize(t *testing.T) {
 	index := indexData{
 		dealSize: 1,
-		entries: []*Entry{{
+		entries: []*SegmentDescIdx{{
 			CommDs:   fr32.Fr32{},
 			Offset:   0,
 			Size:     -1,
@@ -192,7 +192,7 @@ func TestNegativeValidationIndexEntriesSize(t *testing.T) {
 func TestNegativeValidationIndexEntriesOffset(t *testing.T) {
 	index := indexData{
 		dealSize: 1,
-		entries: []*Entry{{
+		entries: []*SegmentDescIdx{{
 			CommDs:   fr32.Fr32{},
 			Offset:   -1,
 			Size:     1,
