@@ -76,9 +76,7 @@ const entrySize int = fr32.BytesNeeded + 2*BytesInInt + BytesInChecksum
 type SegmentDescIdx struct {
 	// Commitment to the data segment (Merkle node which is the root of the subtree containing all the nodes making up the data segment)
 	CommDs fr32.Fr32
-	// Offset is data segment number, thus multiplying with 2 indicates how many nodes into the leaf layer of a data segment index that the data segment description starts. 0-indexed.
-	// The amount of bytes into the offset is then computed by multiplying by 32
-	// TODO this should actually be the offset in the deal tree in bytes, not segment number!
+	// Offset the first leaf which contains this data segment, thus multiplying with 32 indicates how many bytes into the deal this client's data segment starts. 0-indexed.
 	Offset int
 	// Size is the amount of 32-byte nodes (leafs) that is contained in the deal reflected by the SegmentDescIdx
 	Size int
@@ -87,25 +85,15 @@ type SegmentDescIdx struct {
 }
 
 func (ds SegmentDescIdx) MakeNode() (merkletree.Node, merkletree.Node, error) {
-	node1 := merkletree.Node{Data: ds.CommDs.Data}
 	buf := new(bytes.Buffer)
-	err := binary.Write(buf, binary.LittleEndian, uint64(ds.Offset))
+	err := serializeFr32Entry(buf, &ds)
+	data := buf.Bytes()
 	if err != nil {
-		log.Printf("could not write Offset %d of SegmentDescIdx\n", ds.Offset)
+		log.Println("could not serialize node")
 		return merkletree.Node{}, merkletree.Node{}, err
 	}
-	err = binary.Write(buf, binary.LittleEndian, uint64(ds.Size))
-	if err != nil {
-		log.Printf("could not write IndexSize %d of SegmentDescIdx\n", ds.Size)
-		return merkletree.Node{}, merkletree.Node{}, err
-	}
-	err = binary.Write(buf, binary.LittleEndian, ds.Checksum)
-	if err != nil {
-		log.Println("could not write checksum of SegmentDescIdx")
-		return merkletree.Node{}, merkletree.Node{}, err
-	}
-	node2Data := buf.Bytes()
-	node2 := merkletree.Node{Data: *(*[fr32.BytesNeeded]byte)(node2Data)}
+	node1 := merkletree.Node{Data: *(*[fr32.BytesNeeded]byte)(data[:fr32.BytesNeeded])}
+	node2 := merkletree.Node{Data: *(*[fr32.BytesNeeded]byte)(data[fr32.BytesNeeded:])}
 	return node1, node2, nil
 }
 func MakeDataSegmentIdxWithChecksum(commDs *fr32.Fr32, offset int, size int, checksum *[BytesInChecksum]byte) (*SegmentDescIdx, error) {
