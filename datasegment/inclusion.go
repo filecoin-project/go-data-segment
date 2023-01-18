@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"github.com/filecoin-project/go-data-segment/fr32"
 	"github.com/filecoin-project/go-data-segment/merkletree"
 	"github.com/filecoin-project/go-data-segment/util"
@@ -160,7 +161,11 @@ func Validate(commDs *fr32.Fr32, sizeDs int, commDA *fr32.Fr32, sizeDA int, segm
 	if !VerifyInclusion(commDs, commDA, proofSubtree) {
 		return false
 	}
-	index, err := MakeDataSegmentIdx(commDs, proofSubtree.Index(), sizeDs)
+	// Compute how far to the leaf level in the inc tree we must go to find the first segment, being covered by proofSubtree
+	// The amount of levels in the inclusion tree is proofDs.Level() + 1 thus the amount of doubling of proofSubtree.Index()
+	// that is needed to get to the first leaf position is (proofDs.Level() + 1) - proofSubtree.Level()
+	leafIdx := proofSubtree.Index() << ((proofDs.Level() + 1) - proofSubtree.Level())
+	index, err := MakeDataSegmentIdx(commDs, leafIdx, sizeDs)
 	if err != nil {
 		log.Println("could not construct data segment index")
 		return false
@@ -201,7 +206,7 @@ func VerifyInclusion(comm *fr32.Fr32, root *fr32.Fr32, proof merkletree.MerklePr
 // segments is the amount of client data segments included in the deal
 // proofDs is the Merkle proof of index inclusion in the inclusion tree to validate
 func VerifySegDescInclusion(segDesc *SegmentDescIdx, commDA *fr32.Fr32, sizeDA int, segments int, proofDs merkletree.MerkleProof) bool {
-	if !validateIndexTreePos(segDesc.Offset, sizeDA, segments, proofDs) {
+	if !validateIndexTreePos(sizeDA, segments, proofDs) {
 		return false
 	}
 	buf := new(bytes.Buffer)
@@ -218,25 +223,33 @@ func VerifySegDescInclusion(segDesc *SegmentDescIdx, commDA *fr32.Fr32, sizeDA i
 	return true
 }
 
+func computeSegmentIdx(sizeDA int, segments int, proofDs merkletree.MerkleProof) int {
+	// Start of the index at the leaf level
+	start := indexStart(segments, sizeDA)
+	// Find the index of the first parent encompassing a segment and subtract that from the index of the node we prove from
+	return proofDs.Index() - (start >> 1)
+}
+
 // validateIndexTreePos validates the position of a data segment index in an index (sub) tree, proofDs
 // segmentOffset is the number of the given segment in the deal. 0-indexed
-// sizeDa is the amount of 32 byte nodes in the entire deal.
+// sizeDA is the amount of 32 byte nodes in the entire deal.
 // segments is the total amount of segments included in the deal
-func validateIndexTreePos(segmentOffset int, sizeDA int, segments int, proofDs merkletree.MerkleProof) bool {
+func validateIndexTreePos(sizeDA int, segments int, proofDs merkletree.MerkleProof) bool {
 	// Validate the level in the index tree
 	incTreeDepth := 1 + util.Log2Ceil(computeIncTreeLeafs(segments, sizeDA))
 	// Check that the proof of the commitment is one level above the leafs, when levels are 0-indexed
 	if proofDs.Level() != incTreeDepth-2 {
 		return false
 	}
-	// Validate the index in the index tree, i.e. that the data segment index commitment is starting in the right leaf in the tree
-	// TODO this might actually be overkill, I cannot see how to do something malicious with this being wrong
-	// futhermore as it is now, the deal offset is directly defined from the index tree proof
-	idxStart := indexStart(segments, sizeDA)
-	// We are checking that the parent to the first index leaf plus the segmentOffset is the same as the index in the proof
-	if (idxStart/2)+segmentOffset != proofDs.Index() {
-		return false
-	}
+	//// Validate the index in the index tree, i.e. that the data segment index commitment is starting in the right leaf in the tree
+	//// TODO this might actually be overkill, I cannot see how to do something malicious with this being wrong
+	//// futhermore as it is now, the deal offset is directly defined from the index tree proof
+	//idxStart := indexStart(segments, sizeDA)
+	//// We are checking that the parent to the first index leaf plus the segmentOffset is the same as the index in the proof
+	//segmentIdx := computeSegmentIdx(sizeDA, segments, proofDs)
+	//if (idxStart>>1)+segmentIdx != proofDs.Index() {
+	//	return false
+	//}
 	return true
 }
 
@@ -258,10 +271,14 @@ func MakeInclusionTree(segments []merkletree.Node, segmentSizes []int, dealTree 
 }
 
 // MakeIndexProof constructs a data segment proof to the index of the data segment with a given offset in the deal tree
-func MakeIndexProof(inclusionTree merkletree.MerkleTree, offset int, sizeDA int, segments int) (merkletree.MerkleProof, error) {
+func MakeIndexProof(inclusionTree merkletree.MerkleTree, segmentIdx int, sizeDA int, segments int) (merkletree.MerkleProof, error) {
 	// The node we want to prove membership of is one level above the leafs in the index tree
 	lvl := inclusionTree.Depth() - 2
-	idx := (indexStart(segments, sizeDA) >> 1) + offset
+	idx := (indexStart(segments, sizeDA) >> 1) + segmentIdx
+	fmt.Printf("node %v\n", inclusionTree.Node(lvl, idx))
+	fmt.Printf("child %v\n", inclusionTree.Node(lvl+1, 2*idx))
+	fmt.Printf("child+1 %v\n", inclusionTree.Node(lvl+1, 2*idx+1))
+	fmt.Printf("child-1 %v\n", inclusionTree.Node(lvl+1, 2*idx-1))
 	return inclusionTree.ConstructProof(lvl, idx)
 }
 

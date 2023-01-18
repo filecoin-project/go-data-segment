@@ -36,6 +36,10 @@ func (d dummyData) Leafs() []Node {
 	return d.leafs
 }
 
+func (d dummyData) Node(_ int, _ int) *Node {
+	return &Node{}
+}
+
 func (d dummyData) ConstructProof(lvl int, idx int) (MerkleProof, error) {
 	return DummyProof{
 		expectedRoot: d.Root(),
@@ -45,11 +49,11 @@ func (d dummyData) ConstructProof(lvl int, idx int) (MerkleProof, error) {
 	}, nil
 }
 
-func (d dummyData) ConstructBatchedProof(leftLvl int, leftIdx int, rightLvl int, rightIdx int) (BatchedMerkleProof, error) {
+func (d dummyData) ConstructBatchedProof(_ int, _ int, _ int, _ int) (BatchedMerkleProof, error) {
 	panic("not implemented")
 }
 
-func (d dummyData) ValidateFromLeafs(leafData [][]byte) bool {
+func (d dummyData) ValidateFromLeafs(_ [][]byte) bool {
 	return d.valid
 }
 

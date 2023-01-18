@@ -27,6 +27,8 @@ type MerkleTree interface {
 	Root() *Node
 	// Leafs returns all the leaf nodes in the tree
 	Leafs() []Node
+	// Node returns the node at given lvl and idx
+	Node(int, int) *Node
 	// ConstructProof constructs a Merkle proof of the subtree (or leaf) at level lvl with index idx.
 	// level 0 is the root and index 0 is the left-most node in a level.
 	ConstructProof(lvl int, idx int) (MerkleProof, error)
@@ -155,6 +157,11 @@ func (d data) Root() *Node {
 // Leafs return a slice consisting of all the leaf nodes, i.e. leaf data that has been hashed into a Node structure
 func (d data) Leafs() []Node {
 	return d.nodes[len(d.nodes)-1]
+}
+
+// Node returns the node at given lvl and idx
+func (d data) Node(lvl int, idx int) *Node {
+	return &d.nodes[lvl][idx]
 }
 
 // ValidateFromLeafs validates the structure of this Merkle tree, given the raw data elements the tree was constructed from

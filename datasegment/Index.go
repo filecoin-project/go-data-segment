@@ -7,6 +7,7 @@ import (
 	"errors"
 	"github.com/filecoin-project/go-data-segment/fr32"
 	"github.com/filecoin-project/go-data-segment/merkletree"
+	"github.com/filecoin-project/go-data-segment/util"
 	"log"
 )
 
@@ -77,6 +78,7 @@ type SegmentDescIdx struct {
 	CommDs fr32.Fr32
 	// Offset is data segment number, thus multiplying with 2 indicates how many nodes into the leaf layer of a data segment index that the data segment description starts. 0-indexed.
 	// The amount of bytes into the offset is then computed by multiplying by 32
+	// TODO this should actually be the offset in the deal tree in bytes, not segment number!
 	Offset int
 	// Size is the amount of 32-byte nodes (leafs) that is contained in the deal reflected by the SegmentDescIdx
 	Size int
@@ -133,8 +135,9 @@ func MakeSegDescs(segments []merkletree.Node, segmentSizes []int) ([]merkletree.
 		return nil, errors.New("incorrect amount of segments and sizes")
 	}
 	res := make([]merkletree.Node, 2*len(segments))
+	curOffset := 0
 	for i, segment := range segments {
-		currentDesc, err := MakeDataSegmentIdx(&fr32.Fr32{Data: segment.Data}, i, segmentSizes[i])
+		currentDesc, err := MakeDataSegmentIdx(&fr32.Fr32{Data: segment.Data}, curOffset, segmentSizes[i])
 		if err != nil {
 			return nil, err
 		}
@@ -144,8 +147,20 @@ func MakeSegDescs(segments []merkletree.Node, segmentSizes []int) ([]merkletree.
 		}
 		res[2*i] = node1
 		res[2*i+1] = node2
+		// TODO currently only rounding to nearest subtree. Thus to be fully robust it must be updated
+		curOffset += segmentSizes[i]
 	}
 	return res, nil
+}
+
+// SegmentRoot computes the root of the client's segment's subtree
+// treeDepth is the depth of the tree where the client segment is located
+// segmentSize is the amount of leafs needed for the client's segment
+// segmentOffset is the index of the first leaf where the client's segment starts. 0-indexed
+func SegmentRoot(treeDepth int, segmentSize int, segmentOffset int) (int, int) {
+	lvl := treeDepth - util.Log2Ceil(segmentSize) - 1
+	idx := segmentOffset >> util.Log2Ceil(segmentSize)
+	return lvl, idx
 }
 
 // serializeFr32Entry uses a buffer to serialize en SegmentDescIdx into a byte slice
