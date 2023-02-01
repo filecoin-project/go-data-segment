@@ -2,6 +2,7 @@ package datasegment
 
 import (
 	"github.com/filecoin-project/go-data-segment/fr32"
+	"github.com/filecoin-project/go-data-segment/merkletree"
 	"github.com/stretchr/testify/assert"
 	"reflect"
 	"testing"
@@ -35,8 +36,7 @@ func invalidIndex() *indexData {
 	return &index
 }
 
-// PUBLIC METHODS
-func TestIndexSerializationValidation(t *testing.T) {
+func validIndex(t *testing.T) *indexData {
 	comm1 := fr32.Fr32{Data: [fr32.BytesNeeded]byte{1}}
 	comm2 := fr32.Fr32{Data: [fr32.BytesNeeded]byte{2}}
 	entry1, err1 := MakeDataSegmentIdx(&comm1, 123, 1222)
@@ -45,6 +45,13 @@ func TestIndexSerializationValidation(t *testing.T) {
 	assert.Nil(t, err2)
 	index, err3 := MakeIndex([]*SegmentDescIdx{entry1, entry2}, 1000)
 	assert.Nil(t, err3)
+	data := index.(indexData)
+	return &data
+}
+
+// PUBLIC METHODS
+func TestIndexSerializationValidation(t *testing.T) {
+	index := validIndex(t)
 	encoded, err4 := SerializeIndex(index)
 	assert.Nil(t, err4)
 	assert.NotNil(t, encoded)
@@ -64,8 +71,7 @@ func TestIndexSerialization(t *testing.T) {
 	encoded, err := serializeIndex(index)
 	assert.Nil(t, err)
 	assert.NotNil(t, encoded)
-	decoded, errDec := deserializeIndex(encoded)
-	assert.Nil(t, errDec)
+	decoded := deserializeIndex(encoded)
 	assert.NotNil(t, decoded)
 	assert.Equal(t, index.NumberEntries(), decoded.NumberEntries())
 	assert.Equal(t, index.IndexSize(), decoded.IndexSize())
@@ -200,4 +206,21 @@ func TestNegativeValidationIndexEntriesOffset(t *testing.T) {
 		},
 		}}
 	assert.False(t, validateIndexStructure(index))
+}
+
+func TestNegativeMakeDescWrongSegments(t *testing.T) {
+	segments := make([]merkletree.Node, 10)
+	sizes := make([]int, 11)
+	_, err := MakeSegDescs(segments, sizes)
+	assert.NotNil(t, err)
+}
+
+func TestNegativeBadDeserialization(t *testing.T) {
+	index := validIndex(t)
+	encoded, err1 := serializeIndex(index)
+	assert.Nil(t, err1)
+	// Make an error in the encoded data
+	encoded[7] ^= 0xff
+	_, err2 := DeserializeIndex(encoded)
+	assert.NotNil(t, err2)
 }

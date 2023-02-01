@@ -235,21 +235,17 @@ func DeserializeIndex(encoded []byte) (Index, error) {
 		log.Println("no legal data segment index encoding")
 		return nil, errors.New("no legal data segment index encoding")
 	}
-	index, err := deserializeIndex(encoded)
-	if err != nil {
-		log.Println("could not deserialize index")
-		return nil, err
-	}
+	index := deserializeIndex(encoded)
 	if !validateIndexStructure(index) {
 		log.Println("deserialized structure is not valid")
-		return nil, err
+		return nil, errors.New("deserialized structure is not valid")
 	}
 	return index, nil
 }
 
 // deserializeIndex decodes a byte array into a data segment Index, without any validation
 // Assumes the index is FR32 padded
-func deserializeIndex(encoded []byte) (Index, error) {
+func deserializeIndex(encoded []byte) Index {
 	entries := len(encoded) / entrySize
 	decoded := make([]*SegmentDescIdx, entries)
 	ctr := 0
@@ -259,7 +255,7 @@ func deserializeIndex(encoded []byte) (Index, error) {
 		decoded[i] = deserializeFr32Entry(encoded[ctr : ctr+entrySize])
 		ctr += entrySize
 	}
-	return indexData{dealSize: dealSize, entries: decoded}, nil
+	return indexData{dealSize: dealSize, entries: decoded}
 }
 
 func validateIndexStructure(index Index) bool {
