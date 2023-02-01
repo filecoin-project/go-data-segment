@@ -261,6 +261,15 @@ func TestNegativeInclusionDeserializeProofSize3(t *testing.T) {
 	assert.NotNil(t, errDec)
 }
 
+func TestNegativeInvalidIndexTreePos(t *testing.T) {
+	leafs := [][]byte{{0x01, 0x02}, {0x03}, {0x04}, {0x05}, {0x06}}
+	tree, err := merkletree.GrowTree(leafs)
+	assert.Nil(t, err)
+	proofSub, err := tree.ConstructProof(1, 1)
+	assert.Nil(t, err)
+	assert.False(t, validateIndexTreePos(16, len(leafs), proofSub))
+}
+
 func TestNegativeBadDecoding1(t *testing.T) {
 	structure, _, _ := validInclusion(t)
 	encoded, errEnc := SerializeInclusion(structure)
@@ -269,6 +278,40 @@ func TestNegativeBadDecoding1(t *testing.T) {
 	encoded[fr32.BytesNeeded+2*BytesInInt-1] ^= 0xff
 	_, errDec := DeserializeInclusion(encoded)
 	assert.NotNil(t, errDec)
+}
+
+func TestNegativeVerifySegmentInclusion(t *testing.T) {
+	sizeDA := 129
+	offset := 98
+	sizeDs := 1
+	leafData := getLeafs(0, sizeDA)
+	dealTree, err := merkletree.GrowTree(leafData)
+	comm := dealTree.Leafs()[offset]
+	entry, err2 := MakeDataSegmentIdx(&fr32.Fr32{Data: comm.Data}, offset, sizeDs)
+	assert.Nil(t, err2)
+	// We let the client segments be all the leafs
+	sizes := make([]int, sizeDA)
+	for i := range sizes {
+		sizes[i] = 1
+	}
+	incTree, err := MakeInclusionTree(dealTree.Leafs(), sizes, dealTree)
+	assert.Nil(t, err)
+	proofDs, err := MakeIndexProof(incTree, offset, sizeDA, sizeDA)
+	assert.Nil(t, err)
+	// Wrong amount of nodes in the deal
+	assert.False(t, VerifySegDescInclusion(entry, &fr32.Fr32{Data: incTree.Root().Data}, 1024, sizeDA, proofDs))
+	// Too many segments
+	assert.False(t, VerifySegDescInclusion(entry, &fr32.Fr32{Data: incTree.Root().Data}, sizeDA, 257, proofDs))
+	// Wrong root node
+	assert.False(t, VerifySegDescInclusion(entry, &fr32.Fr32{Data: incTree.Node(2, 2).Data}, sizeDA, sizeDA, proofDs))
+	// Wrong segment index, consists of 2 nodes
+	wrongEntry, err2 := MakeDataSegmentIdx(&fr32.Fr32{Data: comm.Data}, offset, 2)
+	assert.Nil(t, err2)
+	assert.False(t, VerifySegDescInclusion(wrongEntry, &fr32.Fr32{Data: incTree.Node(2, 2).Data}, sizeDA, sizeDA, proofDs))
+	// Wrong index
+	wrongProofDs, err := MakeIndexProof(incTree, offset+1, sizeDA, sizeDA)
+	assert.Nil(t, err)
+	assert.False(t, VerifySegDescInclusion(entry, &fr32.Fr32{Data: incTree.Root().Data}, sizeDA, sizeDA, wrongProofDs))
 }
 
 func TestNegativeValidate(t *testing.T) {
