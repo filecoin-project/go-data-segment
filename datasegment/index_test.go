@@ -58,7 +58,7 @@ func TestIndexSerializationValidation(t *testing.T) {
 	decoded, err5 := DeserializeIndex(encoded)
 	assert.Nil(t, err5)
 	assert.NotNil(t, decoded)
-	assert.True(t, reflect.DeepEqual(index, decoded))
+	assert.True(t, reflect.DeepEqual(*index, decoded.(indexData)))
 }
 
 // PRIVATE METHODS

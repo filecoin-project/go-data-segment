@@ -23,6 +23,20 @@ func getLeafs(startIdx int, amount int) [][]byte {
 	return leafs
 }
 
+// Returns the inclusion, the node that is the root of the subtree inclusion, along with the amount of leafs it should cover
+func validInclusion(t *testing.T) (Inclusion, *merkletree.Node, int) {
+	leafs := [][]byte{{0x01, 0x02}, {0x03}, {0x04}, {0x05}, {0x06}}
+	tree, err := merkletree.GrowTree(leafs)
+	assert.Nil(t, err)
+	digest := *merkletree.TruncatedHash(leafs[3])
+	commDA := fr32.Fr32{Data: digest.Data}
+	proofSub, err := tree.ConstructProof(1, 1)
+	assert.Nil(t, err)
+	proofDs, err := tree.ConstructProof(tree.Depth()-1, 3)
+	assert.Nil(t, err)
+	return Inclusion{CommDA: commDA, Size: 1234, ProofSubtree: proofSub, ProofDs: proofDs}, tree.Node(1, 1), 3
+}
+
 // PUBLIC METHODS
 func TestInclusionSerialization(t *testing.T) {
 	root := merkletree.Node{}
@@ -235,6 +249,67 @@ func TestNegativeInclusionDeserializeProofSize2(t *testing.T) {
 	assert.NotNil(t, err)
 }
 
-func TestNegativeDealProofWrongHeight(t *testing.T) {
+func TestNegativeInclusionDeserializeProofSize3(t *testing.T) {
+	inclusion, _, _ := validInclusion(t)
+	buf := new(bytes.Buffer)
+	err := serializeProof(buf, inclusion.ProofDs)
+	assert.Nil(t, err)
+	encodedProof := buf.Bytes()
+	// Wrong size
+	encodedProof[0] += 1
+	_, _, errDec := deserializeProof(encodedProof)
+	assert.NotNil(t, errDec)
+}
 
+func TestNegativeBadDecoding1(t *testing.T) {
+	structure, _, _ := validInclusion(t)
+	encoded, errEnc := SerializeInclusion(structure)
+	assert.Nil(t, errEnc)
+	// make an error in first proof
+	encoded[fr32.BytesNeeded+2*BytesInInt-1] ^= 0xff
+	_, errDec := DeserializeInclusion(encoded)
+	assert.NotNil(t, errDec)
+}
+
+func TestNegativeValidate(t *testing.T) {
+	sizeDA := 1235
+	offset := 123
+	leafData := getLeafs(0, sizeDA)
+	dealTree, err := merkletree.GrowTree(leafData)
+	comm := dealTree.Leafs()[offset]
+	// We let the client segments be all the leafs
+	sizes := make([]int, sizeDA)
+	for i := range sizes {
+		sizes[i] = 1
+	}
+	incTree, err := MakeInclusionTree(dealTree.Leafs(), sizes, dealTree)
+	assert.Nil(t, err)
+	subtreeProof, err := incTree.ConstructProof(incTree.Depth()-1, offset)
+	assert.Nil(t, err)
+	assert.True(t, VerifyInclusion(&fr32.Fr32{Data: comm.Data}, &fr32.Fr32{Data: incTree.Root().Data}, subtreeProof))
+	proofDs, err := MakeIndexProof(incTree, offset, sizeDA, sizeDA)
+	assert.Nil(t, err)
+	assert.True(t, Validate(&fr32.Fr32{Data: comm.Data}, 1, &fr32.Fr32{Data: incTree.Root().Data}, sizeDA, sizeDA, subtreeProof, proofDs))
+	// Wrong sizeDs, should be 1
+	assert.False(t, Validate(&fr32.Fr32{Data: comm.Data}, 2, &fr32.Fr32{Data: incTree.Root().Data}, sizeDA, sizeDA, subtreeProof, proofDs))
+	// Wrong commitment for subtree, should be based on the deal leafs with offset
+	assert.False(t, Validate(&fr32.Fr32{Data: dealTree.Leafs()[offset+1].Data}, 1, &fr32.Fr32{Data: incTree.Root().Data}, sizeDA, sizeDA, subtreeProof, proofDs))
+	// Wrong amount of leafs
+	assert.False(t, Validate(&fr32.Fr32{Data: comm.Data}, 1, &fr32.Fr32{Data: incTree.Root().Data}, sizeDA, 10000, subtreeProof, proofDs))
+	// Wrong index subtree
+	wrongProofDs, err := MakeIndexProof(incTree, offset, sizeDA, 1)
+	assert.Nil(t, err)
+	assert.False(t, Validate(&fr32.Fr32{Data: comm.Data}, 1, &fr32.Fr32{Data: incTree.Root().Data}, sizeDA, sizeDA, subtreeProof, wrongProofDs))
+	// Wrong index subtree offset
+	wrongProofDs2, err := MakeIndexProof(incTree, 42, sizeDA, sizeDA)
+	assert.Nil(t, err)
+	assert.False(t, Validate(&fr32.Fr32{Data: comm.Data}, 1, &fr32.Fr32{Data: incTree.Root().Data}, sizeDA, sizeDA, subtreeProof, wrongProofDs2))
+	// Wrong root
+	assert.False(t, Validate(&fr32.Fr32{Data: comm.Data}, 1, &fr32.Fr32{Data: incTree.Node(1, 0).Data}, sizeDA, sizeDA, subtreeProof, proofDs))
+	// Wrong deal size
+	assert.False(t, Validate(&fr32.Fr32{Data: comm.Data}, 1, &fr32.Fr32{Data: incTree.Root().Data}, 5000, sizeDA, subtreeProof, proofDs))
+	// Wrong subtree, not a leaf
+	wrongSubtreeProof, err := incTree.ConstructProof(incTree.Depth()-2, offset)
+	assert.Nil(t, err)
+	assert.False(t, Validate(&fr32.Fr32{Data: comm.Data}, 1, &fr32.Fr32{Data: incTree.Root().Data}, sizeDA, sizeDA, wrongSubtreeProof, proofDs))
 }
