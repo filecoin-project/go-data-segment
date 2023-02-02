@@ -16,7 +16,7 @@ type MerkleProof interface {
 	ValidateSubtree(subtree *Node, root *Node) bool
 }
 
-type ProofData struct {
+type proofData struct {
 	path []Node
 	// lvl indicates the level in the Merkle tree where root has level 0
 	lvl int
@@ -27,28 +27,28 @@ type ProofData struct {
 
 // Path returns the nodes in the path of the proof.
 // The first node, is in level 1. I.e. the level below the root
-func (d ProofData) Path() []Node {
+func (d proofData) Path() []Node {
 	return d.path
 }
 
 // Level returns the level in the tree which the node this proof validates, is located
-func (d ProofData) Level() int {
+func (d proofData) Level() int {
 	return d.lvl
 }
 
 // Index returns the index of the node this proof validates, within the level returned by Level()
-func (d ProofData) Index() int {
+func (d proofData) Index() int {
 	return d.idx
 }
 
 // ValidateLeaf validates that the data given as input is contained in a Merkle tree with a specific root
-func (d ProofData) ValidateLeaf(data []byte, root *Node) bool {
+func (d proofData) ValidateLeaf(data []byte, root *Node) bool {
 	leaf := truncatedHash(data)
 	return d.ValidateSubtree(leaf, root)
 }
 
 // ValidateSubtree validates that a subtree is contained in the in a Merkle tree with a given root
-func (d ProofData) ValidateSubtree(subtree *Node, root *Node) bool {
+func (d proofData) ValidateSubtree(subtree *Node, root *Node) bool {
 	currentNode := subtree
 	currentIdx := d.idx
 	var parent *Node

@@ -44,8 +44,8 @@ type Node struct {
 	data [digestBytes]byte
 }
 
-// NewBareTree allocates that memory needed to construct a tree with a specific amount of leafs
-func NewBareTree(leafs int) MerkleTree {
+// newBareTree allocates that memory needed to construct a tree with a specific amount of leafs
+func newBareTree(leafs int) data {
 	var tree data
 	tree.nodes = make([][]Node, 1+util.Log2Ceil(leafs))
 	for i := 0; i <= util.Log2Ceil(leafs); i++ {
@@ -66,9 +66,9 @@ func GrowTree(leafData [][]byte) (MerkleTree, error) {
 
 // growTreeHashedLeafs constructs a tree from leafs nodes, i.e. leaf data that has been hashed to construct a Node
 func growTreeHashedLeafs(leafs []Node) MerkleTree {
-	tree := NewBareTree(len(leafs))
+	tree := newBareTree(len(leafs))
 	// Set the leaf nodes
-	tree.(data).nodes[util.Log2Ceil(len(leafs))] = leafs
+	tree.nodes[util.Log2Ceil(len(leafs))] = leafs
 	preLevel := leafs
 	// Construct the Merkle tree bottom-up, starting from the leafs
 	// Note the -1 due to 0-indexing the root level
@@ -83,7 +83,7 @@ func growTreeHashedLeafs(leafs []Node) MerkleTree {
 		if len(preLevel)%2 == 1 {
 			currentLevel[util.Ceil(len(preLevel), 2)-1] = *truncatedHash(preLevel[len(preLevel)-1].data[:])
 		}
-		tree.(data).nodes[level] = currentLevel
+		tree.nodes[level] = currentLevel
 		preLevel = currentLevel
 	}
 	return tree
@@ -131,11 +131,11 @@ func (d data) Validate() bool {
 func (d data) ConstructProof(lvl int, idx int) (MerkleProof, error) {
 	if lvl < 1 || lvl >= d.Depth() {
 		log.Println("level is either below 1 or bigger than the tree supports")
-		return ProofData{}, errors.New("level is either below 1 or bigger than the tree supports")
+		return nil, errors.New("level is either below 1 or bigger than the tree supports")
 	}
 	if idx < 0 {
 		log.Println(fmt.Sprintf("the requested index %d is negative", idx))
-		return ProofData{}, errors.New(fmt.Sprintf("the requested index %d is negative", idx))
+		return nil, errors.New(fmt.Sprintf("the requested index %d is negative", idx))
 	}
 	// The proof consists of appropriate siblings up to and including layer 1
 	proof := make([]Node, lvl)
@@ -145,7 +145,7 @@ func (d data) ConstructProof(lvl int, idx int) (MerkleProof, error) {
 		// For error handling check that no index impossibly large is requested
 		if len(d.nodes[currentLvl]) <= currentIdx {
 			log.Println(fmt.Sprintf("the requested index %d on level %d does not exist in the tree", currentIdx, currentLvl))
-			return ProofData{}, errors.New(fmt.Sprintf("the requested index %d on level %d does not exist in the tree", currentIdx, currentLvl))
+			return nil, errors.New(fmt.Sprintf("the requested index %d on level %d does not exist in the tree", currentIdx, currentLvl))
 		}
 		// Only try to store the sibling node when it exists,
 		// if the tree is not complete this might not always be the case
@@ -155,7 +155,7 @@ func (d data) ConstructProof(lvl int, idx int) (MerkleProof, error) {
 		// Set next index to be the parent
 		currentIdx = currentIdx / 2
 	}
-	return ProofData{path: proof, lvl: lvl, idx: idx}, nil
+	return proofData{path: proof, lvl: lvl, idx: idx}, nil
 }
 
 // ConstructBatchedProof constructs a proof that a sequence of leafs are contained in the tree. Either through a subtree or a (hashed) leaf.
