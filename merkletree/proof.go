@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"github.com/filecoin-project/go-data-segment/fr32"
 	"log"
 )
@@ -92,7 +91,7 @@ func (d proofData) Serialize() ([]byte, error) {
 	for i := 0; i < len(d.Path()); i++ {
 		err := binary.Write(buf, binary.LittleEndian, d.Path()[i].Data)
 		if err != nil {
-			log.Println(fmt.Sprintf("could not write layer %d", i))
+			log.Printf("could not write layer %d\n", i)
 			return nil, err
 		}
 	}

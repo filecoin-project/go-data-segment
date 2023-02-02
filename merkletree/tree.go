@@ -75,7 +75,7 @@ func DeserializeTree(tree []byte) (MerkleTree, error) {
 	}
 	lvlSize := int(binary.LittleEndian.Uint64(tree[:BytesInInt]))
 	if lvlSize <= 0 {
-		log.Println(fmt.Sprintf("amount of leafs must be positive:  %d", lvlSize))
+		log.Printf("amount of leafs must be positive:  %d\n", lvlSize)
 		return data{}, errors.New("amount of leafs must be positive")
 	}
 	decoded := newBareTree(lvlSize)
@@ -83,7 +83,7 @@ func DeserializeTree(tree []byte) (MerkleTree, error) {
 	// Decode from the leafs
 	for i := decoded.Depth() - 1; i >= 0; i-- {
 		if len(tree) < ctr+fr32.BytesNeeded*lvlSize {
-			log.Println(fmt.Sprintf("error in tree encoding. Does not contain level %d", i))
+			log.Printf("error in tree encoding. Does not contain level %d\n", i)
 			return data{}, errors.New("error in tree encoding")
 		}
 		currentLvl := make([]Node, lvlSize)
@@ -248,7 +248,7 @@ func (d data) Serialize() ([]byte, error) {
 	for i := d.Depth() - 1; i >= 0; i-- {
 		err = binary.Write(buf, binary.LittleEndian, d.nodes[i])
 		if err != nil {
-			log.Println(fmt.Sprintf("could not write layer %d", i))
+			log.Printf("could not write layer %d\n", i)
 			return nil, err
 		}
 	}

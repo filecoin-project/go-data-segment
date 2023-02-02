@@ -182,20 +182,14 @@ func verifySegmentInclusion(segments int, sizeDA int, sizeDs int, proofLvl int) 
 	// Compute the expected amount of leaf nodes
 	incLeafs := computeIncTreeLeafs(segments, sizeDA)
 	segmentDepth := util.Log2Ceil(uint64(sizeDs))
-	if util.Log2Ceil(uint64(incLeafs)) != segmentDepth+proofLvl {
-		return false
-	}
-	return true
+	return util.Log2Ceil(uint64(incLeafs)) == segmentDepth+proofLvl
 }
 
 // VerifyInclusion validates a commitment, comm, in accordance to a proof to a root of a tree
 func VerifyInclusion(comm *fr32.Fr32, root *fr32.Fr32, proof merkletree.MerkleProof) bool {
 	element := merkletree.Node{Data: comm.Data}
 	rootNode := merkletree.Node{Data: root.Data}
-	if !proof.ValidateSubtree(&element, &rootNode) {
-		return false
-	}
-	return true
+	return proof.ValidateSubtree(&element, &rootNode)
 }
 
 // VerifySegDescInclusion validates that a data segment index, segDesc, has been included in the index (sub) tree, proofDs
@@ -216,10 +210,7 @@ func VerifySegDescInclusion(segDesc *SegmentDescIdx, commDA *fr32.Fr32, sizeDA i
 	}
 	toHash := buf.Bytes()
 	comm := fr32.Fr32{Data: merkletree.TruncatedHash(toHash).Data}
-	if !VerifyInclusion(&comm, commDA, proofDs) {
-		return false
-	}
-	return true
+	return VerifyInclusion(&comm, commDA, proofDs)
 }
 
 // MakeInclusionTree constructs an inclusion tree based on the deal tree and a list of the nodes that contain all the client segments
@@ -272,8 +263,5 @@ func validateIndexTreePos(sizeDA int, segments int, proofDs merkletree.MerklePro
 	// Validate the level in the index tree
 	incTreeDepth := 1 + util.Log2Ceil(uint64(computeIncTreeLeafs(segments, sizeDA)))
 	// Check that the proof of the commitment is one level above the leafs, when levels are 0-indexed
-	if proofDs.Level() != incTreeDepth-2 {
-		return false
-	}
-	return true
+	return proofDs.Level() == incTreeDepth-2
 }

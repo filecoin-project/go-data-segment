@@ -93,6 +93,7 @@ func TestVerifyEntryInclusion(t *testing.T) {
 	offset := 98
 	leafData := getLeafs(0, sizeDA)
 	dealTree, err := merkletree.GrowTree(leafData)
+	assert.Nil(t, err)
 	comm := dealTree.Leafs()[offset]
 	// The client's data segment is the leaf at offset
 	subtreeProof, err := dealTree.ConstructProof(dealTree.Depth()-1, offset)
@@ -106,6 +107,7 @@ func TestVerifySegmentInclusion(t *testing.T) {
 	sizeDs := 1
 	leafData := getLeafs(0, sizeDA)
 	dealTree, err := merkletree.GrowTree(leafData)
+	assert.Nil(t, err)
 	comm := dealTree.Leafs()[offset]
 	entry, err2 := MakeDataSegmentIdx(&fr32.Fr32{Data: comm.Data}, offset, sizeDs)
 	assert.Nil(t, err2)
@@ -126,6 +128,7 @@ func TestVerifyInclusionTree(t *testing.T) {
 	offset := 123
 	leafData := getLeafs(0, sizeDA)
 	dealTree, err := merkletree.GrowTree(leafData)
+	assert.Nil(t, err)
 	comm := dealTree.Leafs()[offset]
 	// We let the client segments be all the leafs
 	sizes := make([]int, sizeDA)
@@ -192,6 +195,7 @@ func TestVerifyInclusionTreeSoak(t *testing.T) {
 		sizes, sideDA, offset := testSizes(data.segmentIdx, data.segments, data.segmentSize)
 		leafData := getLeafs(0, sideDA)
 		dealTree, err := merkletree.GrowTree(leafData)
+		assert.Nil(t, err)
 		segments := make([]merkletree.Node, data.segments)
 		curOffset := 0
 		for j := range sizes {
@@ -290,6 +294,7 @@ func TestNegativeVerifySegmentInclusion(t *testing.T) {
 	sizeDs := 1
 	leafData := getLeafs(0, sizeDA)
 	dealTree, err := merkletree.GrowTree(leafData)
+	assert.Nil(t, err)
 	comm := dealTree.Leafs()[offset]
 	entry, err2 := MakeDataSegmentIdx(&fr32.Fr32{Data: comm.Data}, offset, sizeDs)
 	assert.Nil(t, err2)
@@ -323,6 +328,7 @@ func TestNegativeValidate(t *testing.T) {
 	offset := 123
 	leafData := getLeafs(0, sizeDA)
 	dealTree, err := merkletree.GrowTree(leafData)
+	assert.Nil(t, err)
 	comm := dealTree.Leafs()[offset]
 	// We let the client segments be all the leafs
 	sizes := make([]int, sizeDA)

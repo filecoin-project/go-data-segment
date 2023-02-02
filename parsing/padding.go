@@ -8,7 +8,7 @@ import (
 
 // Pad pads a general byte array in to Fr32 chunks of bytes where the topmost bits of the most significant byte are 0
 func Pad(unpaddedData []byte) ([]fr32.Fr32, error) {
-	if unpaddedData == nil || len(unpaddedData) == 0 {
+	if len(unpaddedData) == 0 {
 		return nil, errors.New("empty input")
 	}
 	// Compute amount of Fr32 elements in the result
@@ -58,7 +58,7 @@ func shiftChunk(bitIdx int, unpaddedChunk []byte) [fr32.BytesNeeded]byte {
 
 // Unpad a list of Fr32 padded elements into a contiguous byte array
 func Unpad(paddedData []fr32.Fr32) ([]byte, error) {
-	if paddedData == nil || len(paddedData) == 0 {
+	if len(paddedData) == 0 {
 		return nil, errors.New("empty input")
 	}
 	// Compute amount of bytes in the result
