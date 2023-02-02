@@ -35,10 +35,6 @@ type BatchedProofData struct {
 	rightIdx int
 }
 
-func CreateEmptyBatchedProof() BatchedMerkleProof {
-	return BatchedProofData{}
-}
-
 func (b BatchedProofData) LeftProof() MerkleProof {
 	return b.getSubproof(b.leftPath, b.leftLvl, b.leftIdx)
 }

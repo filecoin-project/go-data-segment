@@ -163,23 +163,22 @@ func (d data) ConstructProof(lvl int, idx int) (MerkleProof, error) {
 // contained by the node in rightLvl level and rightIdx index.
 // The root is in level 0 and the left-most node in a given level is indexed 0.
 func (d data) ConstructBatchedProof(leftLvl int, leftIdx int, rightLvl int, rightIdx int) (BatchedMerkleProof, error) {
-	var factory BatchedProofFactory = CreateEmptyBatchedProof
 	if leftLvl < 1 || leftLvl >= d.Depth() || rightLvl < 1 || rightLvl >= d.Depth() {
 		log.Println("a level is either below 1 or bigger than the tree supports")
-		return factory(), errors.New("a level is either below 1 or bigger than the tree supports")
+		return BatchedProofData{}, errors.New("a level is either below 1 or bigger than the tree supports")
 	}
 	if leftIdx < 0 || rightIdx < 0 {
 		log.Println("a requested index is negative")
-		return factory(), errors.New("a requested index is negative")
+		return BatchedProofData{}, errors.New("a requested index is negative")
 	}
 	// Construct individual proofs
 	leftProof, err := d.ConstructProof(leftLvl, leftIdx)
 	if err != nil {
-		return factory(), err
+		return BatchedProofData{}, err
 	}
 	rightProof, err := d.ConstructProof(rightLvl, rightIdx)
 	if err != nil {
-		return factory(), err
+		return BatchedProofData{}, err
 	}
 	return CreateBatchedProof(leftProof, rightProof), nil
 }

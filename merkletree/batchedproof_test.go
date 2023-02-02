@@ -19,7 +19,7 @@ func TestGettersSunshine(t *testing.T) {
 }
 
 func TestGettersEmptyProof(t *testing.T) {
-	proof := CreateEmptyBatchedProof()
+	proof := BatchedProofData{}
 	assert.NotNil(t, proof)
 	assert.NotNil(t, proof.LeftProof())
 	assert.NotNil(t, proof.RightProof())
