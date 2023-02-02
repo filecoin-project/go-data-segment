@@ -38,27 +38,35 @@ type data struct {
 	// nodes start from root and go down left-to-right
 	// thus len(nodes[0]) = 1, len(nodes[1]) = 2, etc.
 	nodes [][]Node
+	// leafs is the amount of raw leafs being used. I.e. without padding to nearest two-power
+	leafs int
 }
 
 type Node struct {
 	data [digestBytes]byte
 }
 
-// newBareTree allocates that memory needed to construct a tree with a specific amount of leafs
+// newBareTree allocates that memory needed to construct a tree with a specific amount of leafs.
+// The construction rounds the amount of leafs up to the nearest two-power with zeroed nodes to ensure
+// that the tree is perfect and hence all internal node's have well-defined children.
 func newBareTree(leafs int) data {
+	adjustedLeafs := 1 << util.Log2Ceil(uint64(leafs))
 	var tree data
-	tree.nodes = make([][]Node, 1+util.Log2Ceil(uint64(leafs)))
-	for i := 0; i <= util.Log2Ceil(uint64(leafs)); i++ {
+	tree.nodes = make([][]Node, 1+util.Log2Ceil(uint64(adjustedLeafs)))
+	tree.leafs = leafs
+	for i := 0; i <= util.Log2Ceil(uint64(adjustedLeafs)); i++ {
 		tree.nodes[i] = make([]Node, 1<<i)
 	}
 	return tree
 }
 
 // GrowTree constructs a Merkle from a list of leafData, the data of a given leaf is represented as a byte slice
+// The construction rounds the amount of leafs up to the nearest two-power with zeroed nodes to ensure
+// that the tree is perfect and hence all internal node's have well-defined children.
+// TODO should things be hard-coded to work on 32 byte leafs?
 func GrowTree(leafData [][]byte) (MerkleTree, error) {
-	var tree MerkleTree
 	if len(leafData) == 0 {
-		return tree, errors.New("empty input")
+		return nil, errors.New("empty input")
 	}
 	leafLevel := hashList(leafData)
 	return growTreeHashedLeafs(leafLevel), nil
@@ -67,26 +75,32 @@ func GrowTree(leafData [][]byte) (MerkleTree, error) {
 // growTreeHashedLeafs constructs a tree from leafs nodes, i.e. leaf data that has been hashed to construct a Node
 func growTreeHashedLeafs(leafs []Node) MerkleTree {
 	tree := newBareTree(len(leafs))
-	// Set the leaf nodes
-	tree.nodes[util.Log2Ceil(uint64(len(leafs)))] = leafs
-	preLevel := leafs
+	tree.leafs = len(leafs)
+	// Set the padded leaf nodes
+	tree.nodes[tree.Depth()-1] = padLeafs(leafs)
+	parentNodes := tree.nodes[tree.Depth()-1]
 	// Construct the Merkle tree bottom-up, starting from the leafs
 	// Note the -1 due to 0-indexing the root level
-	for level := util.Log2Ceil(uint64(len(leafs))) - 1; level >= 0; level-- {
-		currentLevel := make([]Node, util.Ceil(uint(len(preLevel)), 2))
+	for level := tree.Depth() - 2; level >= 0; level-- {
+		currentLevel := make([]Node, util.Ceil(uint(len(parentNodes)), 2))
 		// Traverse the level left to right
-		for i := 0; i+1 < len(preLevel); i = i + 2 {
-			currentLevel[i/2] = *computeNode(&preLevel[i], &preLevel[i+1])
-		}
-		// Handle the edge case where the tree is not complete, i.e. there is an odd number of leafs
-		// This is done by hashing the content of the node and letting it be its own parent
-		if len(preLevel)%2 == 1 {
-			currentLevel[util.Ceil(uint(len(preLevel)), 2)-1] = *truncatedHash(preLevel[len(preLevel)-1].data[:])
+		for i := 0; i+1 < len(parentNodes); i = i + 2 {
+			currentLevel[i/2] = *computeNode(&parentNodes[i], &parentNodes[i+1])
 		}
 		tree.nodes[level] = currentLevel
-		preLevel = currentLevel
+		parentNodes = currentLevel
 	}
 	return tree
+}
+
+func padLeafs(leafs []Node) []Node {
+	paddingAmount := (1 << util.Log2Ceil(uint64(len(leafs)))) - len(leafs)
+	paddingLeafs := make([]Node, paddingAmount)
+	for i := 0; i < paddingAmount; i++ {
+		// None existing leafs gets defined to be 32 0-bytes
+		paddingLeafs[i] = Node{data: [32]byte{}}
+	}
+	return append(leafs, paddingLeafs...)
 }
 
 // Depth returns the amount of levels in the tree, including the root level and leafs.
@@ -95,9 +109,9 @@ func (d data) Depth() int {
 	return len(d.nodes)
 }
 
-// LeafCount returns the amount of leafs in the tree
+// LeafCount returns the amount of non-zero padded leafs in the tree
 func (d data) LeafCount() int {
-	return len(d.nodes[len(d.nodes)-1])
+	return d.leafs
 }
 
 // Root returns a pointer to the root node
