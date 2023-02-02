@@ -155,10 +155,7 @@ func (d proofData) validateProof(subtree *Node, root *Node) bool {
 		currentIdx = currentIdx / 2
 	}
 	// Validate the root against the tree
-	if parent.Data != root.Data {
-		return false
-	}
-	return true
+	return parent.Data == root.Data
 }
 
 func (d proofData) validateProofStructure() bool {

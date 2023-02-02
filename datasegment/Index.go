@@ -146,8 +146,8 @@ func MakeSegDescs(segments []merkletree.Node, segmentSizes []int) ([]merkletree.
 // segmentSize is the amount of leafs needed for the client's segment
 // segmentOffset is the index of the first leaf where the client's segment starts. 0-indexed
 func SegmentRoot(treeDepth int, segmentSize int, segmentOffset int) (int, int) {
-	lvl := treeDepth - util.Log2Ceil(segmentSize) - 1
-	idx := segmentOffset >> util.Log2Ceil(segmentSize)
+	lvl := treeDepth - util.Log2Ceil(uint64(segmentSize)) - 1
+	idx := segmentOffset >> util.Log2Ceil(uint64(segmentSize))
 	return lvl, idx
 }
 

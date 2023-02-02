@@ -29,16 +29,16 @@ func TestProofSerialization(t *testing.T) {
 	testAmounts := []int{2, 3, 4, 55, 555}
 	for _, amount := range testAmounts {
 		tree := getTree(t, amount)
-		proof, errProof := tree.ConstructProof(util.Log2Ceil(amount), 1)
+		proof, errProof := tree.ConstructProof(util.Log2Ceil(uint64(amount)), 1)
 		assert.Nil(t, errProof)
-		assert.True(t, proof.ValidateSubtree(&tree.(data).nodes[util.Log2Ceil(amount)][1], tree.Root()))
+		assert.True(t, proof.ValidateSubtree(&tree.(data).nodes[util.Log2Ceil(uint64(amount))][1], tree.Root()))
 		encoded, errEnc := proof.Serialize()
 		assert.Nil(t, errEnc)
 		assert.NotNil(t, encoded)
 		decoded, errDec := DeserializeProof(encoded)
 		assert.Nil(t, errDec)
 		assert.NotNil(t, decoded)
-		assert.True(t, proof.ValidateSubtree(&tree.(data).nodes[util.Log2Ceil(amount)][1], tree.Root()))
+		assert.True(t, proof.ValidateSubtree(&tree.(data).nodes[util.Log2Ceil(uint64(amount))][1], tree.Root()))
 		assert.True(t, reflect.DeepEqual(proof, decoded))
 	}
 }

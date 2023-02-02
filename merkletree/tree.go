@@ -54,16 +54,12 @@ type Node struct {
 	Data [digestBytes]byte
 }
 
-// NewBareTree allocates that memory needed to construct a tree with a specific amount of leafs
-func NewBareTree(leafs int) MerkleTree {
+// newBareTree allocates that memory needed to construct a tree with a specific amount of leafs
+func newBareTree(leafs int) data {
 	var tree data
-	depth := 1 + util.Log2Ceil(leafs)
-	currentNodes := leafs
-	tree.nodes = make([][]Node, depth)
-	for i := depth - 1; i >= 0; i-- {
-		tree.nodes[i] = make([]Node, currentNodes)
-		// The amount of nodes in the parent level is half, rounded down
-		currentNodes = currentNodes / 2
+	tree.nodes = make([][]Node, 1+util.Log2Ceil(uint64(leafs)))
+	for i := 0; i <= util.Log2Ceil(uint64(leafs)); i++ {
+		tree.nodes[i] = make([]Node, 1<<i)
 	}
 	return tree
 }
@@ -82,7 +78,7 @@ func DeserializeTree(tree []byte) (MerkleTree, error) {
 		log.Println(fmt.Sprintf("amount of leafs must be positive:  %d", lvlSize))
 		return data{}, errors.New("amount of leafs must be positive")
 	}
-	decoded := NewBareTree(lvlSize)
+	decoded := newBareTree(lvlSize)
 	ctr := BytesInInt
 	// Decode from the leafs
 	for i := decoded.Depth() - 1; i >= 0; i-- {
@@ -96,9 +92,9 @@ func DeserializeTree(tree []byte) (MerkleTree, error) {
 			currentLvl[j] = Node{Data: *nodeBytes}
 			ctr += fr32.BytesNeeded
 		}
-		decoded.(data).nodes[i] = currentLvl
+		decoded.nodes[i] = currentLvl
 		// The amount of nodes in the parent level is half, rounded up
-		lvlSize = util.Ceil(lvlSize, 2)
+		lvlSize = util.Ceil(uint(lvlSize), 2)
 	}
 	return decoded, nil
 }
@@ -106,7 +102,7 @@ func DeserializeTree(tree []byte) (MerkleTree, error) {
 // GrowTree constructs a Merkle from a list of leafData, the data of a given leaf is represented as a byte slice
 func GrowTree(leafData [][]byte) (MerkleTree, error) {
 	var tree MerkleTree
-	if leafData == nil || len(leafData) == 0 {
+	if len(leafData) == 0 {
 		return tree, errors.New("empty input")
 	}
 	leafLevel := hashList(leafData)
@@ -115,14 +111,14 @@ func GrowTree(leafData [][]byte) (MerkleTree, error) {
 
 // GrowTreeHashedLeafs constructs a tree from leafs nodes, i.e. leaf data that has been hashed to construct a Node
 func GrowTreeHashedLeafs(leafs []Node) MerkleTree {
-	tree := NewBareTree(len(leafs))
+	tree := newBareTree(len(leafs))
 	// Set the leaf nodes
-	tree.(data).nodes[util.Log2Ceil(len(leafs))] = leafs
+	tree.nodes[util.Log2Ceil(uint64(len(leafs)))] = leafs
 	preLevel := leafs
 	// Construct the Merkle tree bottom-up, starting from the leafs
 	// Note the -1 due to 0-indexing the root level
-	for level := util.Log2Ceil(len(leafs)) - 1; level >= 0; level-- {
-		currentLevel := make([]Node, util.Ceil(len(preLevel), 2))
+	for level := util.Log2Ceil(uint64(len(leafs))) - 1; level >= 0; level-- {
+		currentLevel := make([]Node, util.Ceil(uint(len(preLevel)), 2))
 		// Traverse the level left to right
 		for i := 0; i+1 < len(preLevel); i = i + 2 {
 			currentLevel[i/2] = *computeNode(&preLevel[i], &preLevel[i+1])
@@ -130,9 +126,9 @@ func GrowTreeHashedLeafs(leafs []Node) MerkleTree {
 		// Handle the edge case where the tree is not complete, i.e. there is an odd number of leafs
 		// This is done by hashing the content of the node and letting it be its own parent
 		if len(preLevel)%2 == 1 {
-			currentLevel[util.Ceil(len(preLevel), 2)-1] = *TruncatedHash(preLevel[len(preLevel)-1].Data[:])
+			currentLevel[util.Ceil(uint(len(preLevel)), 2)-1] = *TruncatedHash(preLevel[len(preLevel)-1].Data[:])
 		}
-		tree.(data).nodes[level] = currentLevel
+		tree.nodes[level] = currentLevel
 		preLevel = currentLevel
 	}
 	return tree
@@ -184,12 +180,12 @@ func (d data) Validate() bool {
 // The root is in level 0 and the left-most node in a given level is indexed 0.
 func (d data) ConstructProof(lvl int, idx int) (MerkleProof, error) {
 	if lvl < 1 || lvl >= d.Depth() {
-		log.Println("level is either below 1 or bigger than the tree supports")
-		return proofData{}, errors.New("level is either below 1 or bigger than the tree supports")
+		log.Printf("level is either below 1 or bigger than the tree supports\n")
+		return nil, fmt.Errorf("level is either below 1 or bigger than the tree supports")
 	}
 	if idx < 0 {
-		log.Println(fmt.Sprintf("the requested index %d is negative", idx))
-		return proofData{}, errors.New(fmt.Sprintf("the requested index %d is negative", idx))
+		log.Printf("the requested index %d is negative\n", idx)
+		return nil, fmt.Errorf("the requested index %d is negative", idx)
 	}
 	// The proof consists of appropriate siblings up to and including layer 1
 	proof := make([]Node, lvl)
@@ -198,8 +194,8 @@ func (d data) ConstructProof(lvl int, idx int) (MerkleProof, error) {
 	for currentLvl := lvl; currentLvl >= 1; currentLvl-- {
 		// For error handling check that no index impossibly large is requested
 		if len(d.nodes[currentLvl]) <= currentIdx {
-			log.Println(fmt.Sprintf("the requested index %d on level %d does not exist in the tree", currentIdx, currentLvl))
-			return proofData{}, errors.New(fmt.Sprintf("the requested index %d on level %d does not exist in the tree", currentIdx, currentLvl))
+			log.Printf("the requested index %d on level %d does not exist in the tree\n", currentIdx, currentLvl)
+			return nil, fmt.Errorf("the requested index %d on level %d does not exist in the tree", currentIdx, currentLvl)
 		}
 		// Only try to store the sibling node when it exists,
 		// if the tree is not complete this might not always be the case
@@ -217,23 +213,22 @@ func (d data) ConstructProof(lvl int, idx int) (MerkleProof, error) {
 // contained by the node in rightLvl level and rightIdx index.
 // The root is in level 0 and the left-most node in a given level is indexed 0.
 func (d data) ConstructBatchedProof(leftLvl int, leftIdx int, rightLvl int, rightIdx int) (BatchedMerkleProof, error) {
-	var factory BatchedProofFactory = CreateEmptyBatchedProof
 	if leftLvl < 1 || leftLvl >= d.Depth() || rightLvl < 1 || rightLvl >= d.Depth() {
 		log.Println("a level is either below 1 or bigger than the tree supports")
-		return factory(), errors.New("a level is either below 1 or bigger than the tree supports")
+		return batchedProofData{}, errors.New("a level is either below 1 or bigger than the tree supports")
 	}
 	if leftIdx < 0 || rightIdx < 0 {
 		log.Println("a requested index is negative")
-		return factory(), errors.New("a requested index is negative")
+		return batchedProofData{}, errors.New("a requested index is negative")
 	}
 	// Construct individual proofs
 	leftProof, err := d.ConstructProof(leftLvl, leftIdx)
 	if err != nil {
-		return factory(), err
+		return batchedProofData{}, err
 	}
 	rightProof, err := d.ConstructProof(rightLvl, rightIdx)
 	if err != nil {
-		return factory(), err
+		return batchedProofData{}, err
 	}
 	return CreateBatchedProof(leftProof, rightProof), nil
 }

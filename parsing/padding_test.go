@@ -24,7 +24,7 @@ func TestPadAndUnpad(t *testing.T) {
 		assert.Equal(t, randomBytes, unpaddedData[:1001])
 		// Check that unpadded data uses everything in the Fr32 encoding, even those bytes that have resulted in 0 bytes from encoding a weird length paddedData object
 		assert.Equal(t,
-			util.Ceil(fr32.BitsNeeded*util.Ceil(1001*8, fr32.BitsNeeded), 8),
+			util.Ceil(uint(fr32.BitsNeeded*util.Ceil(1001*8, fr32.BitsNeeded)), 8),
 			len(unpaddedData))
 	}
 }

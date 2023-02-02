@@ -181,8 +181,8 @@ func Validate(commDs *fr32.Fr32, sizeDs int, commDA *fr32.Fr32, sizeDA int, segm
 func verifySegmentInclusion(segments int, sizeDA int, sizeDs int, proofLvl int) bool {
 	// Compute the expected amount of leaf nodes
 	incLeafs := computeIncTreeLeafs(segments, sizeDA)
-	segmentDepth := util.Log2Ceil(sizeDs)
-	if util.Log2Ceil(incLeafs) != segmentDepth+proofLvl {
+	segmentDepth := util.Log2Ceil(uint64(sizeDs))
+	if util.Log2Ceil(uint64(incLeafs)) != segmentDepth+proofLvl {
 		return false
 	}
 	return true
@@ -252,7 +252,7 @@ func indexStart(segments int, sizeDA int) int {
 	// Compute the amount of total leafs in the tree including the index
 	inclusionCapacity := computeIncTreeLeafs(segments, sizeDA)
 	// Compute the size of the index. 2-power to ensure it is a proper subtree. Each segment requires two leaf nodes in the index
-	indexAlign := 1 << util.Log2Ceil(2*segments)
+	indexAlign := 1 << util.Log2Ceil(uint64(2*segments))
 	// Index is places in the rightmost and smallest subtree it requires
 	return inclusionCapacity - indexAlign
 }
@@ -260,8 +260,8 @@ func indexStart(segments int, sizeDA int) int {
 // computeIncTreeLeafs computes the amount of leafs needed in an inclusion tree based on the amount of segments and the amount of 32 byte data elements, sizeDA
 func computeIncTreeLeafs(segments int, sizeDA int) int {
 	// Compute the size of subtree we need for the index, which needs 2 nodes per deal
-	indexTreeLeafs := 1 << util.Log2Ceil(2*segments)
-	return 1 << util.Log2Ceil(sizeDA+indexTreeLeafs)
+	indexTreeLeafs := 1 << util.Log2Ceil(uint64(2*segments))
+	return 1 << util.Log2Ceil(uint64(sizeDA+indexTreeLeafs))
 }
 
 // validateIndexTreePos validates the position of a data segment index in an index (sub) tree, proofDs
@@ -270,7 +270,7 @@ func computeIncTreeLeafs(segments int, sizeDA int) int {
 // proofDs is the data segment index proof
 func validateIndexTreePos(sizeDA int, segments int, proofDs merkletree.MerkleProof) bool {
 	// Validate the level in the index tree
-	incTreeDepth := 1 + util.Log2Ceil(computeIncTreeLeafs(segments, sizeDA))
+	incTreeDepth := 1 + util.Log2Ceil(uint64(computeIncTreeLeafs(segments, sizeDA)))
 	// Check that the proof of the commitment is one level above the leafs, when levels are 0-indexed
 	if proofDs.Level() != incTreeDepth-2 {
 		return false

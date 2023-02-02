@@ -154,14 +154,14 @@ func testSizes(segmentIdx int, segments int, segmentSize int) ([]int, int, int) 
 	for j := range sizes {
 		if segmentIdx != j {
 			// Round to nearest 2-power
-			sizes[j] = 1 << util.Log2Ceil(segmentSize)
+			sizes[j] = 1 << util.Log2Ceil(uint64(segmentSize))
 		} else {
 			// Adjust the segment we care about
 			sizes[segmentIdx] = segmentSize
 			offset = totalUsed
 		}
 		// Round up to nearest 2-power
-		totalUsed += 1 << util.Log2Ceil(sizes[j])
+		totalUsed += 1 << util.Log2Ceil(uint64(sizes[j]))
 	}
 	return sizes, totalUsed, offset
 }
