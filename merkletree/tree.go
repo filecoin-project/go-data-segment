@@ -165,20 +165,20 @@ func (d data) ConstructProof(lvl int, idx int) (MerkleProof, error) {
 func (d data) ConstructBatchedProof(leftLvl int, leftIdx int, rightLvl int, rightIdx int) (BatchedMerkleProof, error) {
 	if leftLvl < 1 || leftLvl >= d.Depth() || rightLvl < 1 || rightLvl >= d.Depth() {
 		log.Println("a level is either below 1 or bigger than the tree supports")
-		return BatchedProofData{}, errors.New("a level is either below 1 or bigger than the tree supports")
+		return batchedProofData{}, errors.New("a level is either below 1 or bigger than the tree supports")
 	}
 	if leftIdx < 0 || rightIdx < 0 {
 		log.Println("a requested index is negative")
-		return BatchedProofData{}, errors.New("a requested index is negative")
+		return batchedProofData{}, errors.New("a requested index is negative")
 	}
 	// Construct individual proofs
 	leftProof, err := d.ConstructProof(leftLvl, leftIdx)
 	if err != nil {
-		return BatchedProofData{}, err
+		return batchedProofData{}, err
 	}
 	rightProof, err := d.ConstructProof(rightLvl, rightIdx)
 	if err != nil {
-		return BatchedProofData{}, err
+		return batchedProofData{}, err
 	}
 	return CreateBatchedProof(leftProof, rightProof), nil
 }
