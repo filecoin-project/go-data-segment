@@ -220,7 +220,7 @@ func TestNegativeBadDeserialization(t *testing.T) {
 	encoded, err1 := serializeIndex(index)
 	assert.Nil(t, err1)
 	// Make an error in the encoded data
-	encoded[7] ^= 0xff
+	encoded[9] ^= 0xff
 	_, err2 := DeserializeIndex(encoded)
 	assert.NotNil(t, err2)
 }

@@ -75,7 +75,7 @@ func validateInclusionStructure(structure Inclusion) bool {
 
 // DeserializeInclusion decodes a byte array into a data segment Inclusion
 func DeserializeInclusion(encoded []byte) (Inclusion, error) {
-	if encoded == nil || len(encoded) < minSizeInclusion {
+	if len(encoded) < minSizeInclusion {
 		log.Println("no data segment inclusion encoded")
 		return Inclusion{}, errors.New("no data segment inclusion encoded")
 	}

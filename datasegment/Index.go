@@ -230,7 +230,7 @@ func deserializeFr32Entry(encoded []byte) *SegmentDescIdx {
 // Assumes the index is FR32 padded
 func DeserializeIndex(encoded []byte) (Index, error) {
 	// Check that at least one SegmentDescIdx is included and that the size is appropriate
-	if encoded == nil || len(encoded) < minIndexSize || (len(encoded)-minIndexSize)%entrySize != 0 {
+	if len(encoded) < minIndexSize || (len(encoded)-minIndexSize)%entrySize != 0 {
 		log.Println("no legal data segment index encoding")
 		return nil, errors.New("no legal data segment index encoding")
 	}

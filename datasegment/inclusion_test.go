@@ -279,7 +279,7 @@ func TestNegativeBadDecoding1(t *testing.T) {
 	encoded, errEnc := SerializeInclusion(structure)
 	assert.Nil(t, errEnc)
 	// make an error in first proof
-	encoded[fr32.BytesNeeded+2*BytesInInt-1] ^= 0xff
+	encoded[fr32.BytesNeeded+2*BytesInInt+3] ^= 0xff
 	_, errDec := DeserializeInclusion(encoded)
 	assert.NotNil(t, errDec)
 }
