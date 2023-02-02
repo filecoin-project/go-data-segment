@@ -39,10 +39,14 @@ func validInclusion(t *testing.T) (Inclusion, *merkletree.Node, int) {
 
 // PUBLIC METHODS
 func TestInclusionSerialization(t *testing.T) {
-	root := merkletree.Node{}
+	leafs := [][]byte{{0x01, 0x02}, {0x03}, {0x04}, {0x05}, {0x06}}
+	tree, err := merkletree.GrowTree(leafs)
+	assert.Nil(t, err)
 	commDA := fr32.Fr32{}
-	proofSub := merkletree.NewDummyProof(4, 5, &root)
-	proofDs := merkletree.NewDummyProof(6, 4233, &root)
+	proofSub, err := tree.ConstructProof(1, 1)
+	assert.Nil(t, err)
+	proofDs, err := tree.ConstructProof(1, 0)
+	assert.Nil(t, err)
 	structure := Inclusion{CommDA: commDA, Size: 1234, ProofSubtree: proofSub, ProofDs: proofDs}
 	encoded, errEnc := SerializeInclusion(structure)
 	assert.Nil(t, errEnc)

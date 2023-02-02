@@ -11,7 +11,6 @@ import (
 	"log"
 )
 
-const BitsInChecksum int = 126
 const BytesInChecksum int = 16
 
 const minIndexSize int = BytesInInt + entrySize

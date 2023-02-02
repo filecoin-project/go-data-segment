@@ -277,10 +277,3 @@ func validateIndexTreePos(sizeDA int, segments int, proofDs merkletree.MerklePro
 	}
 	return true
 }
-
-func computeSegmentIdx(sizeDA int, segments int, proofDs merkletree.MerkleProof) int {
-	// Start of the index at the leaf level
-	start := indexStart(segments, sizeDA)
-	// Find the index of the first parent encompassing a segment and subtract that from the index of the node we prove from
-	return proofDs.Index() - (start >> 1)
-}
