@@ -13,7 +13,7 @@ func Pad(unpaddedData []byte) ([]fr32.Fr32, error) {
 	}
 	// Compute amount of Fr32 elements in the result
 	chunkCount := util.Ceil(len(unpaddedData)*8, fr32.BitsNeeded)
-	paddedData := make([]fr32.Fr32, chunkCount, chunkCount)
+	paddedData := make([]fr32.Fr32, chunkCount)
 	bitIdx := 0
 	for i := 0; i < chunkCount; i++ {
 		unpaddedChunk := retrieveChunk(bitIdx, unpaddedData)
@@ -63,7 +63,7 @@ func Unpad(paddedData []fr32.Fr32) ([]byte, error) {
 	}
 	// Compute amount of bytes in the result
 	bytes := util.Ceil(len(paddedData)*fr32.BitsNeeded, 8)
-	unpaddedData := make([]byte, bytes, bytes)
+	unpaddedData := make([]byte, bytes)
 	bitIdx := 0
 	for i := 0; i < len(paddedData); i++ {
 		chunk := paddedData[i].Data

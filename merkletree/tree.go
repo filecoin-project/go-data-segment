@@ -57,7 +57,7 @@ func newBareTree(leafs int) data {
 // GrowTree constructs a Merkle from a list of leafData, the data of a given leaf is represented as a byte slice
 func GrowTree(leafData [][]byte) (MerkleTree, error) {
 	var tree MerkleTree
-	if leafData == nil || len(leafData) == 0 {
+	if len(leafData) == 0 {
 		return tree, errors.New("empty input")
 	}
 	leafLevel := hashList(leafData)
@@ -130,12 +130,12 @@ func (d data) Validate() bool {
 // The root is in level 0 and the left-most node in a given level is indexed 0.
 func (d data) ConstructProof(lvl int, idx int) (MerkleProof, error) {
 	if lvl < 1 || lvl >= d.Depth() {
-		log.Println("level is either below 1 or bigger than the tree supports")
-		return nil, errors.New("level is either below 1 or bigger than the tree supports")
+		log.Printf("level is either below 1 or bigger than the tree supports\n")
+		return nil, fmt.Errorf("level is either below 1 or bigger than the tree supports")
 	}
 	if idx < 0 {
-		log.Println(fmt.Sprintf("the requested index %d is negative", idx))
-		return nil, errors.New(fmt.Sprintf("the requested index %d is negative", idx))
+		log.Printf("the requested index %d is negative\n", idx)
+		return nil, fmt.Errorf("the requested index %d is negative", idx)
 	}
 	// The proof consists of appropriate siblings up to and including layer 1
 	proof := make([]Node, lvl)
@@ -144,8 +144,8 @@ func (d data) ConstructProof(lvl int, idx int) (MerkleProof, error) {
 	for currentLvl := lvl; currentLvl >= 1; currentLvl-- {
 		// For error handling check that no index impossibly large is requested
 		if len(d.nodes[currentLvl]) <= currentIdx {
-			log.Println(fmt.Sprintf("the requested index %d on level %d does not exist in the tree", currentIdx, currentLvl))
-			return nil, errors.New(fmt.Sprintf("the requested index %d on level %d does not exist in the tree", currentIdx, currentLvl))
+			log.Printf("the requested index %d on level %d does not exist in the tree\n", currentIdx, currentLvl)
+			return nil, fmt.Errorf("the requested index %d on level %d does not exist in the tree", currentIdx, currentLvl)
 		}
 		// Only try to store the sibling node when it exists,
 		// if the tree is not complete this might not always be the case

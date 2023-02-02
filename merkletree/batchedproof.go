@@ -92,8 +92,5 @@ func (b BatchedProofData) ValidateLeafs(leafs [][]byte, startIdx int, tree Merkl
 		}
 	}
 	// Also check the batched proof from the edges of the leafs
-	if !b.ValidateSequence(&hashedLeafs[0], &hashedLeafs[len(hashedLeafs)-1], tree.Root()) {
-		return false
-	}
-	return true
+	return b.ValidateSequence(&hashedLeafs[0], &hashedLeafs[len(hashedLeafs)-1], tree.Root())
 }

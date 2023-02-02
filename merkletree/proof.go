@@ -73,8 +73,5 @@ func (d proofData) ValidateSubtree(subtree *Node, root *Node) bool {
 		currentIdx = currentIdx / 2
 	}
 	// Validate the root against the tree
-	if parent.data != root.data {
-		return false
-	}
-	return true
+	return parent.data == root.data
 }
