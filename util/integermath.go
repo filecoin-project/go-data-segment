@@ -19,18 +19,11 @@ func Min(x int, y int) int {
 }
 
 // Ceil computes the ceiling of x/y for x, y being integers
-func Ceil(x int, y int) int {
+func Ceil(x uint, y uint) int {
 	if x == 0 {
 		return 0
 	}
-	return 1 + ((Abs(x) - 1) / Abs(y))
-}
-
-func Abs(x int) int {
-	if x < 0 {
-		return -x
-	}
-	return x
+	return int(1 + ((x - 1) / y))
 }
 
 // Log2Ceil computes the integer logarithm with ceiling for 64 bit unsigned ints

@@ -73,7 +73,7 @@ func growTreeHashedLeafs(leafs []Node) MerkleTree {
 	// Construct the Merkle tree bottom-up, starting from the leafs
 	// Note the -1 due to 0-indexing the root level
 	for level := util.Log2Ceil(uint64(len(leafs))) - 1; level >= 0; level-- {
-		currentLevel := make([]Node, util.Ceil(len(preLevel), 2))
+		currentLevel := make([]Node, util.Ceil(uint(len(preLevel)), 2))
 		// Traverse the level left to right
 		for i := 0; i+1 < len(preLevel); i = i + 2 {
 			currentLevel[i/2] = *computeNode(&preLevel[i], &preLevel[i+1])
@@ -81,7 +81,7 @@ func growTreeHashedLeafs(leafs []Node) MerkleTree {
 		// Handle the edge case where the tree is not complete, i.e. there is an odd number of leafs
 		// This is done by hashing the content of the node and letting it be its own parent
 		if len(preLevel)%2 == 1 {
-			currentLevel[util.Ceil(len(preLevel), 2)-1] = *truncatedHash(preLevel[len(preLevel)-1].data[:])
+			currentLevel[util.Ceil(uint(len(preLevel)), 2)-1] = *truncatedHash(preLevel[len(preLevel)-1].data[:])
 		}
 		tree.nodes[level] = currentLevel
 		preLevel = currentLevel
