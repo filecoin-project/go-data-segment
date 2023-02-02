@@ -73,7 +73,7 @@ func TestGrowTreeSoak(t *testing.T) {
 	for amount := 4; amount < 125; amount++ {
 		tree := getTree(t, amount)
 
-		assert.Equal(t, 1+util.Log2Ceil(amount), tree.Depth())
+		assert.Equal(t, 1+util.Log2Ceil(uint64(amount)), tree.Depth())
 		// LeafCount should have "amount" elements
 		assert.Equal(t, amount, tree.LeafCount())
 	}
@@ -86,7 +86,7 @@ func TestConstructProof(t *testing.T) {
 	proof, err := tree.ConstructProof(tree.Depth()-1, 55)
 	assert.Nil(t, err)
 
-	assert.Equal(t, proof.Level(), util.Log2Ceil(tree.LeafCount()))
+	assert.Equal(t, proof.Level(), util.Log2Ceil(uint64(tree.LeafCount())))
 	assert.Equal(t, proof.Index(), 55)
 	assert.Equal(t, len(proof.Path()), tree.Depth()-1)
 }

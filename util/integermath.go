@@ -1,5 +1,7 @@
 package util
 
+import "math/bits"
+
 // Max returns the minimum value of inputs x, y
 func Max(x int, y int) int {
 	if x > y {
@@ -31,35 +33,15 @@ func Abs(x int) int {
 	return x
 }
 
-// Log2Ceil computes the integer logarithm with ceiling for up to 64 bit ints
-// Translated from https://www.appsloveworld.com/c/100/6/compute-fast-log-base-2-ceiling
-func Log2Ceil(value int) int {
-	var y int
-	if (value & (value - 1)) == 0 {
-		y = 0
-	} else {
-		y = 1
+// Log2Ceil computes the integer logarithm with ceiling for 64 bit unsigned ints
+func Log2Ceil(value uint64) int {
+	zeros := bits.LeadingZeros64(value)
+	ones := bits.OnesCount64(value)
+	inc := 0
+	// If the number is not a two power, then we need to increment to get the ceiling
+	if ones > 1 {
+		inc = 1
 	}
-	j := 32
-	for i := 0; i < 6; i++ {
-		var k int
-		if (uint64(value) & tab64[i]) == 0 {
-			k = 0
-		} else {
-			k = j
-		}
-		y += k
-		value >>= k
-		j >>= 1
-	}
-
-	return y
+	// Max ensure the edge case of value = 0 is correctly handled
+	return Max(0, 64-zeros-1+inc)
 }
-
-var tab64 = [6]uint64{
-	0xFFFFFFFF00000000,
-	0x00000000FFFF0000,
-	0x000000000000FF00,
-	0x00000000000000F0,
-	0x000000000000000C,
-	0x0000000000000002}

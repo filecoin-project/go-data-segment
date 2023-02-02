@@ -47,8 +47,8 @@ type Node struct {
 // newBareTree allocates that memory needed to construct a tree with a specific amount of leafs
 func newBareTree(leafs int) data {
 	var tree data
-	tree.nodes = make([][]Node, 1+util.Log2Ceil(leafs))
-	for i := 0; i <= util.Log2Ceil(leafs); i++ {
+	tree.nodes = make([][]Node, 1+util.Log2Ceil(uint64(leafs)))
+	for i := 0; i <= util.Log2Ceil(uint64(leafs)); i++ {
 		tree.nodes[i] = make([]Node, 1<<i)
 	}
 	return tree
@@ -68,11 +68,11 @@ func GrowTree(leafData [][]byte) (MerkleTree, error) {
 func growTreeHashedLeafs(leafs []Node) MerkleTree {
 	tree := newBareTree(len(leafs))
 	// Set the leaf nodes
-	tree.nodes[util.Log2Ceil(len(leafs))] = leafs
+	tree.nodes[util.Log2Ceil(uint64(len(leafs)))] = leafs
 	preLevel := leafs
 	// Construct the Merkle tree bottom-up, starting from the leafs
 	// Note the -1 due to 0-indexing the root level
-	for level := util.Log2Ceil(len(leafs)) - 1; level >= 0; level-- {
+	for level := util.Log2Ceil(uint64(len(leafs))) - 1; level >= 0; level-- {
 		currentLevel := make([]Node, util.Ceil(len(preLevel), 2))
 		// Traverse the level left to right
 		for i := 0; i+1 < len(preLevel); i = i + 2 {
