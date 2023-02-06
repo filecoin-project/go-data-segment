@@ -5,15 +5,17 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"errors"
+	"log"
+
 	"github.com/filecoin-project/go-data-segment/fr32"
 	"github.com/filecoin-project/go-data-segment/merkletree"
 	"github.com/filecoin-project/go-data-segment/util"
-	"log"
+	"golang.org/x/xerrors"
 )
 
 const BytesInChecksum int = 16
 
-const minIndexSize int = BytesInInt + entrySize
+const minIndexSize int = BytesInInt + EntrySize
 
 type Index interface {
 	// NumberEntries is the number of entries
@@ -28,57 +30,58 @@ type Index interface {
 	SegmentDesc(index int) *SegmentDescIdx
 }
 
-type indexData struct {
-	dealSize int
+type IndexData struct {
+	dealSize uint64
 	entries  []*SegmentDescIdx
 }
 
-func MakeIndex(entries []*SegmentDescIdx, dealSize int) (Index, error) {
-	index := indexData{
+func MakeIndex(entries []*SegmentDescIdx, dealSize uint64) (*IndexData, error) {
+	index := IndexData{
 		dealSize: dealSize,
 		entries:  entries,
 	}
-	if !validateIndexStructure(index) {
-		return nil, errors.New("input data is invalid")
+	if err := validateIndexStructure(&index); err != nil {
+		return nil, xerrors.Errorf("input data is invalid: %w", err)
 	}
-	return index, nil
+	return &index, nil
 }
 
 // NumberEntries returns the number of entries
-func (i indexData) NumberEntries() int {
+func (i IndexData) NumberEntries() int {
 	return len(i.entries)
 }
 
 // IndexSize returns the size of the index. Defined to be number of entries * 64 bytes
-func (i indexData) IndexSize() int {
-	return i.NumberEntries() * 64
+func (i IndexData) IndexSize() uint64 {
+	// uint64 as byte sizes have tendency to go over MaxInt32 (2GiB)
+	return uint64(i.NumberEntries()) * 64
 }
 
 // DealSize returns the size of deal
-func (i indexData) DealSize() int {
+func (i IndexData) DealSize() uint64 {
 	return i.dealSize
 }
 
 // Start returns the start of the index, defined to be (size of deal - Size) & 0xc0ffffff_ffffffff (in little endian, so the two most significant bits must be 0)
-func (i indexData) Start() int {
+func (i IndexData) Start() int {
 	return int((uint64(i.DealSize()) - uint64(i.IndexSize())) & 0xc0ffffff_ffffffff)
 }
 
 // SegmentDesc returns the SegmentDescIdx in position of index. 0-indexed
-func (i indexData) SegmentDesc(index int) *SegmentDescIdx {
+func (i IndexData) SegmentDesc(index int) *SegmentDescIdx {
 	return i.entries[index]
 }
 
-const entrySize int = fr32.BytesNeeded + 2*BytesInInt + BytesInChecksum
+const EntrySize int = fr32.BytesNeeded + 2*BytesInInt + BytesInChecksum
 
 // SegmentDescIdx contains a data segment description to be contained as two Fr32 elements in 2 leaf nodes of the data segment index
 type SegmentDescIdx struct {
 	// Commitment to the data segment (Merkle node which is the root of the subtree containing all the nodes making up the data segment)
 	CommDs fr32.Fr32
 	// Offset the first leaf which contains this data segment, thus multiplying with 32 indicates how many bytes into the deal this client's data segment starts. 0-indexed.
-	Offset int
+	Offset uint64
 	// Size is the amount of 32-byte nodes (leafs) that is contained in the deal reflected by the SegmentDescIdx
-	Size int
+	Size uint64
 	// Checksum is a 126 bit checksum (SHA256) computes on CommDs || Offset || Size
 	Checksum [BytesInChecksum]byte
 }
@@ -95,20 +98,20 @@ func (ds SegmentDescIdx) MakeNode() (merkletree.Node, merkletree.Node, error) {
 	node2 := merkletree.Node{Data: *(*[fr32.BytesNeeded]byte)(data[fr32.BytesNeeded:])}
 	return node1, node2, nil
 }
-func MakeDataSegmentIdxWithChecksum(commDs *fr32.Fr32, offset int, size int, checksum *[BytesInChecksum]byte) (*SegmentDescIdx, error) {
+func MakeDataSegmentIdxWithChecksum(commDs *fr32.Fr32, offset uint64, size uint64, checksum *[BytesInChecksum]byte) (*SegmentDescIdx, error) {
 	en := SegmentDescIdx{
 		CommDs:   *commDs,
 		Offset:   offset,
 		Size:     size,
 		Checksum: *checksum,
 	}
-	if !validateEntry(&en) {
-		return nil, errors.New("input does not form a valid SegmentDescIdx")
+	if err := validateEntry(&en); err != nil {
+		return nil, xerrors.Errorf("input does not form a valid SegmentDescIdx: %w", err)
 	}
 	return &en, nil
 }
 
-func MakeDataSegmentIdx(commDs *fr32.Fr32, offset int, size int) (*SegmentDescIdx, error) {
+func MakeDataSegmentIdx(commDs *fr32.Fr32, offset uint64, size uint64) (*SegmentDescIdx, error) {
 	checksum, err := computeChecksum(commDs, offset, size)
 	if err != nil {
 		log.Println("could not compute checksum")
@@ -117,12 +120,12 @@ func MakeDataSegmentIdx(commDs *fr32.Fr32, offset int, size int) (*SegmentDescId
 	return MakeDataSegmentIdxWithChecksum(commDs, offset, size, checksum)
 }
 
-func MakeSegDescs(segments []merkletree.Node, segmentSizes []int) ([]merkletree.Node, error) {
+func MakeSegDescs(segments []merkletree.Node, segmentSizes []uint64) ([]merkletree.Node, error) {
 	if len(segments) != len(segmentSizes) {
 		return nil, errors.New("incorrect amount of segments and sizes")
 	}
 	res := make([]merkletree.Node, 2*len(segments))
-	curOffset := 0
+	curOffset := uint64(0)
 	for i, segment := range segments {
 		currentDesc, err := MakeDataSegmentIdx(&fr32.Fr32{Data: segment.Data}, curOffset, segmentSizes[i])
 		if err != nil {
@@ -144,7 +147,7 @@ func MakeSegDescs(segments []merkletree.Node, segmentSizes []int) ([]merkletree.
 // treeDepth is the depth of the tree where the client segment is located
 // segmentSize is the amount of leafs needed for the client's segment
 // segmentOffset is the index of the first leaf where the client's segment starts. 0-indexed
-func SegmentRoot(treeDepth int, segmentSize int, segmentOffset int) (int, int) {
+func SegmentRoot(treeDepth int, segmentSize uint64, segmentOffset uint64) (int, uint64) {
 	lvl := treeDepth - util.Log2Ceil(uint64(segmentSize)) - 1
 	idx := segmentOffset >> util.Log2Ceil(uint64(segmentSize))
 	return lvl, idx
@@ -154,31 +157,27 @@ func SegmentRoot(treeDepth int, segmentSize int, segmentOffset int) (int, int) {
 func serializeFr32Entry(buf *bytes.Buffer, entry *SegmentDescIdx) error {
 	err := binary.Write(buf, binary.LittleEndian, entry.CommDs.Data)
 	if err != nil {
-		log.Println("could not write the commitment of SegmentDescIdx")
-		return err
+		return xerrors.Errorf("writing CommD: %w", err)
 	}
 	err = binary.Write(buf, binary.LittleEndian, uint64(entry.Offset))
 	if err != nil {
-		log.Printf("could not write Offset %d of SegmentDescIdx\n", entry.Offset)
-		return err
+		return xerrors.Errorf("writing Offset: %w", err)
 	}
 	err = binary.Write(buf, binary.LittleEndian, uint64(entry.Size))
 	if err != nil {
-		log.Printf("could not write IndexSize %d of SegmentDescIdx\n", entry.Size)
-		return err
+		return xerrors.Errorf("writing Size: %w", err)
 	}
 	err = binary.Write(buf, binary.LittleEndian, entry.Checksum)
 	if err != nil {
-		log.Println("could not write checksum of SegmentDescIdx")
-		return err
+		return xerrors.Errorf("writing Checksum: %w", err)
 	}
 	return nil
 }
 
 // SerializeIndex encodes a data segment Inclusion into a byte array, after validating that the structure is valid
-func SerializeIndex(index Index) ([]byte, error) {
-	if !validateIndexStructure(index) {
-		return nil, errors.New("the index is not valid")
+func SerializeIndex(index *IndexData) ([]byte, error) {
+	if err := validateIndexStructure(index); err != nil {
+		return nil, xerrors.Errorf("the index is not valid: %w", err)
 	}
 	res, err := serializeIndex(index)
 	if err != nil {
@@ -189,31 +188,33 @@ func SerializeIndex(index Index) ([]byte, error) {
 }
 
 // serializeIndex encodes a data segment Inclusion into a byte array without doing validation
-func serializeIndex(index Index) ([]byte, error) {
+func serializeIndex(index *IndexData) ([]byte, error) {
 	buf := new(bytes.Buffer)
 	err := binary.Write(buf, binary.LittleEndian, uint64(index.DealSize()))
 	if err != nil {
-		log.Printf("could not write deal size %d\n", index.DealSize())
-		return nil, err
+		return nil, xerrors.Errorf("could not write deal size %d: %w", index.DealSize(), err)
 	}
 	for i := 0; i < index.NumberEntries(); i++ {
 		err = serializeFr32Entry(buf, index.SegmentDesc(i))
 		if err != nil {
 			log.Printf("could not write SegmentDescIdx %d\n", i)
-			return nil, err
+			return nil, xerrors.Errorf("could not write data segment (index %d): %w", i, err)
 		}
 	}
 	return buf.Bytes(), nil
 }
 
 // deserializeFr32Entry deserializes a byte slice into an SegmentDescIdx
-func deserializeFr32Entry(encoded []byte) *SegmentDescIdx {
+func deserializeFr32Entry(encoded []byte) (*SegmentDescIdx, error) {
+	if len(encoded) < EntrySize {
+		return nil, xerrors.Errorf("passed encoded entry too small: %d < %d", len(encoded), EntrySize)
+	}
 	ctr := 0
 	commDs := (*[fr32.BytesNeeded]byte)(encoded[ctr : ctr+fr32.BytesNeeded])
 	ctr += fr32.BytesNeeded
-	offset := int(binary.LittleEndian.Uint64(encoded[ctr : ctr+BytesInInt]))
+	offset := binary.LittleEndian.Uint64(encoded[ctr : ctr+BytesInInt])
 	ctr += BytesInInt
-	size := int(binary.LittleEndian.Uint64(encoded[ctr : ctr+BytesInInt]))
+	size := binary.LittleEndian.Uint64(encoded[ctr : ctr+BytesInInt])
 	ctr += BytesInInt
 	checksum := *(*[BytesInChecksum]byte)(encoded[ctr : ctr+BytesInChecksum])
 	ctr += BytesInChecksum
@@ -223,74 +224,73 @@ func deserializeFr32Entry(encoded []byte) *SegmentDescIdx {
 		Size:     size,
 		Checksum: checksum,
 	}
-	return &en
+	return &en, nil
 }
 
 // DeserializeIndex decodes a byte array into a data segment Index and validates the structure
 // Assumes the index is FR32 padded
-func DeserializeIndex(encoded []byte) (Index, error) {
+func DeserializeIndex(dealSize uint64, encoded []byte) (*IndexData, error) {
 	// Check that at least one SegmentDescIdx is included and that the size is appropriate
-	if len(encoded) < minIndexSize || (len(encoded)-minIndexSize)%entrySize != 0 {
-		log.Println("no legal data segment index encoding")
+	if len(encoded) < minIndexSize || (len(encoded)-minIndexSize)%EntrySize != 0 {
 		return nil, errors.New("no legal data segment index encoding")
 	}
-	index := deserializeIndex(encoded)
-	if !validateIndexStructure(index) {
-		log.Println("deserialized structure is not valid")
-		return nil, errors.New("deserialized structure is not valid")
+	index, err := deserializeIndex(dealSize, encoded)
+	if err != nil {
+		return nil, xerrors.Errorf("deserialising index: %w", err)
+	}
+
+	if err := validateIndexStructure(index); err != nil {
+		return nil, xerrors.Errorf("deserialized structure is not valid: %w", err)
 	}
 	return index, nil
 }
 
 // deserializeIndex decodes a byte array into a data segment Index, without any validation
 // Assumes the index is FR32 padded
-func deserializeIndex(encoded []byte) Index {
-	entries := len(encoded) / entrySize
+func deserializeIndex(dealSize uint64, encoded []byte) (*IndexData, error) {
+	entries := len(encoded) / EntrySize
 	decoded := make([]*SegmentDescIdx, entries)
 	ctr := 0
-	dealSize := int(binary.LittleEndian.Uint64(encoded[ctr : ctr+BytesInInt]))
-	ctr += BytesInInt
+	var err error
 	for i := 0; i < entries; i++ {
-		decoded[i] = deserializeFr32Entry(encoded[ctr : ctr+entrySize])
-		ctr += entrySize
+		decoded[i], err = deserializeFr32Entry(encoded[ctr : ctr+EntrySize])
+		if err != nil {
+			return nil, xerrors.Errorf("decoding entry at position %d: %w", i, err)
+		}
+
+		ctr += EntrySize
 	}
-	return indexData{dealSize: dealSize, entries: decoded}
+	return &IndexData{dealSize: dealSize, entries: decoded}, nil
 }
 
-func validateIndexStructure(index Index) bool {
+func validateIndexStructure(index *IndexData) error {
 	if index == nil {
-		log.Println("index is null")
-		return false
-	}
-	if index.DealSize() <= 0 {
-		log.Printf("amount of deals must be positive, it is %d\n", index.DealSize())
-		return false
+		return xerrors.Errorf("index is nil")
 	}
 	if index.NumberEntries() <= 0 {
-		log.Printf("amount of deals entries be positive, it is %d\n", index.NumberEntries())
-		return false
+		return xerrors.Errorf("number of deal entries must be positive, %d < 0", index.NumberEntries())
 	}
-	for i := 0; i < index.NumberEntries(); i++ {
-		if !validateEntry(index.SegmentDesc(i)) {
-			return false
+	for _, e := range index.entries {
+		if err := validateEntry(e); err != nil {
+			return xerrors.Errorf("invalid entry at index %d: %w", err)
 		}
 	}
-	return true
+	return nil
 }
 
-func validateEntry(en *SegmentDescIdx) bool {
-	if en.Size < 0 {
-		log.Printf("size in SegmentDescIdx is %d, it must not be negative\n", en.Size)
-		return false
+func validateEntry(en *SegmentDescIdx) error {
+	ok, err := validateChecksum(en)
+	if err != nil {
+		return xerrors.Errorf("validating checksum: %w", err)
 	}
-	if en.Offset < 0 {
-		log.Printf("offset in SegmentDescIdx is %d, it must not be negative\n", en.Offset)
-		return false
+	if !ok {
+		return xerrors.Errorf("checksum invalid")
 	}
-	return validateChecksum(en)
+	return nil
+
 }
 
-func computeChecksum(commDs *fr32.Fr32, offset int, size int) (*[BytesInChecksum]byte, error) {
+func computeChecksum(commDs *fr32.Fr32, offset uint64, size uint64) (*[BytesInChecksum]byte, error) {
 	buf := new(bytes.Buffer)
 	tempEntry := SegmentDescIdx{
 		CommDs:   *commDs,
@@ -300,8 +300,7 @@ func computeChecksum(commDs *fr32.Fr32, offset int, size int) (*[BytesInChecksum
 	}
 	err := serializeFr32Entry(buf, &tempEntry)
 	if err != nil {
-		log.Println("could not serialize commitment and integers")
-		return nil, err
+		return nil, xerrors.Errorf("serailising entry: %w", err)
 	}
 	// We want to hash the SegmentDescIdx, excluding the computeChecksum as it is what we are trying to compute
 	toHash := buf.Bytes()[:fr32.BytesNeeded+2*BytesInInt]
@@ -312,14 +311,10 @@ func computeChecksum(commDs *fr32.Fr32, offset int, size int) (*[BytesInChecksum
 	return (*[BytesInChecksum]byte)(res), nil
 }
 
-func validateChecksum(en *SegmentDescIdx) bool {
+func validateChecksum(en *SegmentDescIdx) (bool, error) {
 	refChecksum, err := computeChecksum(&(en.CommDs), en.Offset, en.Size)
 	if err != nil {
-		log.Println("could not serialize SegmentDescIdx")
-		return false
+		return false, xerrors.Errorf("computing checksum: %w", err)
 	}
-	if !bytes.Equal(refChecksum[:], en.Checksum[:]) {
-		return false
-	}
-	return true
+	return bytes.Equal(refChecksum[:], en.Checksum[:]), nil
 }

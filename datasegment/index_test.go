@@ -1,11 +1,12 @@
 package datasegment
 
 import (
+	"reflect"
+	"testing"
+
 	"github.com/filecoin-project/go-data-segment/fr32"
 	"github.com/filecoin-project/go-data-segment/merkletree"
 	"github.com/stretchr/testify/assert"
-	"reflect"
-	"testing"
 )
 
 // HELPER METHODS
@@ -28,15 +29,15 @@ func invalidEntry2() *SegmentDescIdx {
 }
 
 // makes an index without valid checksums
-func invalidIndex() *indexData {
-	index := indexData{
+func invalidIndex() *IndexData {
+	index := IndexData{
 		dealSize: 100000,
 		entries:  []*SegmentDescIdx{invalidEntry1(), invalidEntry2()},
 	}
 	return &index
 }
 
-func validIndex(t *testing.T) *indexData {
+func validIndex(t *testing.T) *IndexData {
 	comm1 := fr32.Fr32{Data: [fr32.BytesNeeded]byte{1}}
 	comm2 := fr32.Fr32{Data: [fr32.BytesNeeded]byte{2}}
 	entry1, err1 := MakeDataSegmentIdx(&comm1, 123, 1222)
@@ -45,8 +46,7 @@ func validIndex(t *testing.T) *indexData {
 	assert.Nil(t, err2)
 	index, err3 := MakeIndex([]*SegmentDescIdx{entry1, entry2}, 1000)
 	assert.Nil(t, err3)
-	data := index.(indexData)
-	return &data
+	return index
 }
 
 // PUBLIC METHODS
@@ -55,10 +55,10 @@ func TestIndexSerializationValidation(t *testing.T) {
 	encoded, err4 := SerializeIndex(index)
 	assert.Nil(t, err4)
 	assert.NotNil(t, encoded)
-	decoded, err5 := DeserializeIndex(encoded)
+	decoded, err5 := DeserializeIndex(index.DealSize(), encoded)
 	assert.Nil(t, err5)
 	assert.NotNil(t, decoded)
-	assert.True(t, reflect.DeepEqual(*index, decoded.(indexData)))
+	assert.True(t, reflect.DeepEqual(*index, decoded))
 }
 
 // PRIVATE METHODS
@@ -71,7 +71,8 @@ func TestIndexSerialization(t *testing.T) {
 	encoded, err := serializeIndex(index)
 	assert.Nil(t, err)
 	assert.NotNil(t, encoded)
-	decoded := deserializeIndex(encoded)
+	decoded, err := deserializeIndex(index.DealSize(), encoded)
+	assert.NoError(t, err)
 	assert.NotNil(t, decoded)
 	assert.Equal(t, index.NumberEntries(), decoded.NumberEntries())
 	assert.Equal(t, index.IndexSize(), decoded.IndexSize())
@@ -80,6 +81,11 @@ func TestIndexSerialization(t *testing.T) {
 	assert.Equal(t, index.SegmentDesc(1), decoded.SegmentDesc(1))
 	assert.Equal(t, index.DealSize(), decoded.DealSize())
 	assert.True(t, reflect.DeepEqual(*index, decoded))
+}
+
+func TestLargeSizes(t *testing.T) {
+	index := validIndex(t)
+	MakeIndex(index.entries, 32<<30)
 }
 
 // NEGATIVE TESTS
@@ -106,13 +112,13 @@ func TestNegativeIndexCreation(t *testing.T) {
 
 func TestNegativeSerialization(t *testing.T) {
 	// nil entries
-	data := indexData{dealSize: 15, entries: nil}
+	data := &IndexData{dealSize: 15, entries: nil}
 	serialized, err := SerializeIndex(data)
 	assert.NotNil(t, err)
 	assert.Nil(t, serialized)
 
 	// Empty entries
-	data = indexData{dealSize: 15, entries: make([]*SegmentDescIdx, 0)}
+	data = &IndexData{dealSize: 15, entries: make([]*SegmentDescIdx, 0)}
 	serialized, err = SerializeIndex(data)
 	assert.NotNil(t, err)
 	assert.Nil(t, serialized)
@@ -127,20 +133,20 @@ func TestNegativeSerializationIndexNil(t *testing.T) {
 
 func TestNegativeDeserializationIndexIncorrect(t *testing.T) {
 	// nil
-	serialized, err := DeserializeIndex(nil)
+	serialized, err := DeserializeIndex(1000, nil)
 	assert.NotNil(t, err)
 	assert.Nil(t, serialized)
 	// too small size
-	serialized, err = DeserializeIndex(make([]byte, minIndexSize-1))
+	serialized, err = DeserializeIndex(1000, make([]byte, minIndexSize-1))
 	assert.NotNil(t, err)
 	assert.Nil(t, serialized)
 	// wrong size
-	serialized, err = DeserializeIndex(make([]byte, minIndexSize+1))
+	serialized, err = DeserializeIndex(1000, make([]byte, minIndexSize+1))
 	assert.NotNil(t, err)
 	assert.Nil(t, serialized)
 }
 
-func TestNegativeValidationDealSize(t *testing.T) {
+func TestDealSizeSmallerThanSegmentDesciptions(t *testing.T) {
 	// Too small deal
 	en := SegmentDescIdx{
 		CommDs:   fr32.Fr32{},
@@ -148,69 +154,13 @@ func TestNegativeValidationDealSize(t *testing.T) {
 		Size:     12222,
 		Checksum: [BytesInChecksum]byte{},
 	}
-	index := indexData{-1, []*SegmentDescIdx{&en}}
-	assert.False(t, validateIndexStructure(index))
-}
-
-func TestNegativeValidationEntriesSize(t *testing.T) {
-	// Negative size
-	en := SegmentDescIdx{
-		CommDs:   fr32.Fr32{},
-		Offset:   1,
-		Size:     -100,
-		Checksum: [BytesInChecksum]byte{},
-	}
-	index := indexData{-1, []*SegmentDescIdx{&en}}
-	assert.False(t, validateIndexStructure(index))
-}
-
-func TestNegativeValidationEntriesOffset(t *testing.T) {
-	// Negative offset
-	en := SegmentDescIdx{
-		CommDs:   fr32.Fr32{},
-		Offset:   -1,
-		Size:     324,
-		Checksum: [BytesInChecksum]byte{},
-	}
-	index := indexData{-1, []*SegmentDescIdx{&en}}
-	assert.False(t, validateIndexStructure(index))
-}
-
-func TestNegativeValidationEntriesAmount(t *testing.T) {
-	// Empty entries
-	index := indexData{-1, make([]*SegmentDescIdx, 0)}
-	assert.False(t, validateIndexStructure(index))
-}
-
-func TestNegativeValidationIndexEntriesSize(t *testing.T) {
-	index := indexData{
-		dealSize: 1,
-		entries: []*SegmentDescIdx{{
-			CommDs:   fr32.Fr32{},
-			Offset:   0,
-			Size:     -1,
-			Checksum: [BytesInChecksum]byte{},
-		},
-		}}
-	assert.False(t, validateIndexStructure(index))
-}
-
-func TestNegativeValidationIndexEntriesOffset(t *testing.T) {
-	index := indexData{
-		dealSize: 1,
-		entries: []*SegmentDescIdx{{
-			CommDs:   fr32.Fr32{},
-			Offset:   -1,
-			Size:     1,
-			Checksum: [BytesInChecksum]byte{},
-		},
-		}}
-	assert.False(t, validateIndexStructure(index))
+	index := IndexData{100, []*SegmentDescIdx{&en}}
+	assert.Error(t, validateIndexStructure(&index))
 }
 
 func TestNegativeMakeDescWrongSegments(t *testing.T) {
 	segments := make([]merkletree.Node, 10)
-	sizes := make([]int, 11)
+	sizes := make([]uint64, 11)
 	_, err := MakeSegDescs(segments, sizes)
 	assert.NotNil(t, err)
 }
@@ -221,6 +171,6 @@ func TestNegativeBadDeserialization(t *testing.T) {
 	assert.Nil(t, err1)
 	// Make an error in the encoded data
 	encoded[9] ^= 0xff
-	_, err2 := DeserializeIndex(encoded)
+	_, err2 := DeserializeIndex(1000000, encoded)
 	assert.NotNil(t, err2)
 }

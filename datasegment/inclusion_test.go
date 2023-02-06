@@ -4,12 +4,13 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/hex"
+	"reflect"
+	"testing"
+
 	"github.com/filecoin-project/go-data-segment/fr32"
 	"github.com/filecoin-project/go-data-segment/merkletree"
 	"github.com/filecoin-project/go-data-segment/util"
 	"github.com/stretchr/testify/assert"
-	"reflect"
-	"testing"
 )
 
 // HELPER METHODS
@@ -90,7 +91,7 @@ func TestInclusionSerializationIntegration(t *testing.T) {
 
 func TestVerifyEntryInclusion(t *testing.T) {
 	sizeDA := 400
-	offset := 98
+	offset := uint64(98)
 	leafData := getLeafs(0, sizeDA)
 	dealTree, err := merkletree.GrowTree(leafData)
 	assert.Nil(t, err)
@@ -102,64 +103,63 @@ func TestVerifyEntryInclusion(t *testing.T) {
 }
 
 func TestVerifySegmentInclusion(t *testing.T) {
-	sizeDA := 129
-	offset := 98
-	sizeDs := 1
-	leafData := getLeafs(0, sizeDA)
+	sizeDA := uint64(129)
+	offset := uint64(98)
+	sizeDs := uint64(1)
+	leafData := getLeafs(0, int(sizeDA))
 	dealTree, err := merkletree.GrowTree(leafData)
 	assert.Nil(t, err)
 	comm := dealTree.Leafs()[offset]
 	entry, err2 := MakeDataSegmentIdx(&fr32.Fr32{Data: comm.Data}, offset, sizeDs)
 	assert.Nil(t, err2)
 	// We let the client segments be all the leafs
-	sizes := make([]int, sizeDA)
+	sizes := make([]uint64, sizeDA)
 	for i := range sizes {
 		sizes[i] = 1
 	}
-	incTree, err := MakeInclusionTree(dealTree.Leafs(), sizes, dealTree)
-	assert.Nil(t, err)
-	proofDs, err := MakeIndexProof(incTree, offset, sizeDA, sizeDA)
-	assert.Nil(t, err)
-	assert.True(t, VerifySegDescInclusion(entry, &fr32.Fr32{Data: incTree.Root().Data}, sizeDA, sizeDA, proofDs))
+	incTree, err := MakeInclusionTree(dealTree.Leafs()[:sizeDA], sizes, dealTree)
+	assert.NoError(t, err)
+	proofDs, err := MakeIndexProof(incTree, offset, sizeDA, int(sizeDA))
+	assert.NoError(t, err)
+	assert.True(t, VerifySegDescInclusion(entry, &fr32.Fr32{Data: incTree.Root().Data}, sizeDA, int(sizeDA), proofDs))
 }
 
 func TestVerifyInclusionTree(t *testing.T) {
-	sizeDA := 1235
-	offset := 123
-	leafData := getLeafs(0, sizeDA)
+	sizeDA := uint64(1235)
+	offset := uint64(123)
+	leafData := getLeafs(0, int(sizeDA))
 	dealTree, err := merkletree.GrowTree(leafData)
 	assert.Nil(t, err)
 	comm := dealTree.Leafs()[offset]
 	// We let the client segments be all the leafs
-	sizes := make([]int, sizeDA)
+	sizes := make([]uint64, sizeDA)
 	for i := range sizes {
 		sizes[i] = 1
 	}
-	incTree, err := MakeInclusionTree(dealTree.Leafs(), sizes, dealTree)
+	incTree, err := MakeInclusionTree(dealTree.Leafs()[:sizeDA], sizes, dealTree)
 	assert.Nil(t, err)
 	subtreeProof, err := incTree.ConstructProof(incTree.Depth()-1, offset)
 	assert.Nil(t, err)
 	assert.True(t, VerifyInclusion(&fr32.Fr32{Data: comm.Data}, &fr32.Fr32{Data: incTree.Root().Data}, subtreeProof))
-	proofDs, err := MakeIndexProof(incTree, offset, sizeDA, sizeDA)
+	proofDs, err := MakeIndexProof(incTree, offset, sizeDA, int(sizeDA))
 	assert.Nil(t, err)
-	assert.True(t, Validate(&fr32.Fr32{Data: comm.Data}, 1, &fr32.Fr32{Data: incTree.Root().Data}, sizeDA, sizeDA, subtreeProof, proofDs))
+	assert.True(t, Validate(&fr32.Fr32{Data: comm.Data}, 1, &fr32.Fr32{Data: incTree.Root().Data}, sizeDA, int(sizeDA), subtreeProof, proofDs))
 }
 
 type inclusionData struct {
-	segmentIdx  int
-	segmentSize int
+	segmentIdx  uint64
+	segmentSize uint64
 	segments    int
 }
 
 // Make a list of test sizes and return this list along with the total amount of nodes in the leaf tree and the start position of the client segment which we are interested in
 // Currently we just use a static segment-size, since otherwise it is hard to automatically ensure proper partitioning of subtrees
 // TODO is to ensure that segments distributed correctly in the deal with proper subtree
-func testSizes(segmentIdx int, segments int, segmentSize int) ([]int, int, int) {
-	sizes := make([]int, segments)
-	totalUsed := 0
-	var offset int
+func testSizes(segmentIdx uint64, segments int, segmentSize uint64) ([]uint64, uint64, uint64) {
+	sizes := make([]uint64, segments)
+	var totalUsed, offset uint64
 	for j := range sizes {
-		if segmentIdx != j {
+		if segmentIdx != uint64(j) {
 			// Round to nearest 2-power
 			sizes[j] = 1 << util.Log2Ceil(uint64(segmentSize))
 		} else {
@@ -192,12 +192,12 @@ func TestVerifyInclusionTreeSoak(t *testing.T) {
 		},
 	}
 	for _, data := range testData {
-		sizes, sideDA, offset := testSizes(data.segmentIdx, data.segments, data.segmentSize)
-		leafData := getLeafs(0, sideDA)
+		sizes, sizeDA, offset := testSizes(data.segmentIdx, data.segments, data.segmentSize)
+		leafData := getLeafs(0, int(sizeDA))
 		dealTree, err := merkletree.GrowTree(leafData)
 		assert.Nil(t, err)
 		segments := make([]merkletree.Node, data.segments)
-		curOffset := 0
+		curOffset := uint64(0)
 		for j := range sizes {
 			lvl, idx := SegmentRoot(dealTree.Depth(), sizes[j], curOffset)
 			segments[j] = *dealTree.Node(lvl, idx)
@@ -215,9 +215,9 @@ func TestVerifyInclusionTreeSoak(t *testing.T) {
 		subtreeProof, err := incTree.ConstructProof(clientLvl, clientIdx)
 		assert.Nil(t, err)
 		assert.True(t, VerifyInclusion(&fr32.Fr32{Data: comm.Data}, &fr32.Fr32{Data: incTree.Root().Data}, subtreeProof))
-		proofDs, err := MakeIndexProof(incTree, data.segmentIdx, sideDA, data.segments)
+		proofDs, err := MakeIndexProof(incTree, data.segmentIdx, sizeDA, data.segments)
 		assert.Nil(t, err)
-		assert.True(t, Validate(&fr32.Fr32{Data: comm.Data}, data.segmentSize, &fr32.Fr32{Data: incTree.Root().Data}, sideDA, data.segments, subtreeProof, proofDs))
+		assert.True(t, Validate(&fr32.Fr32{Data: comm.Data}, data.segmentSize, &fr32.Fr32{Data: incTree.Root().Data}, sizeDA, data.segments, subtreeProof, proofDs))
 	}
 }
 
@@ -289,49 +289,52 @@ func TestNegativeBadDecoding1(t *testing.T) {
 }
 
 func TestNegativeVerifySegmentInclusion(t *testing.T) {
-	sizeDA := 129
-	offset := 98
-	sizeDs := 1
-	leafData := getLeafs(0, sizeDA)
+	sizeDA := uint64(129)
+	nSegments := int(sizeDA)
+	offset := uint64(98)
+	sizeDs := uint64(1)
+	leafData := getLeafs(0, int(sizeDA))
 	dealTree, err := merkletree.GrowTree(leafData)
 	assert.Nil(t, err)
 	comm := dealTree.Leafs()[offset]
 	entry, err2 := MakeDataSegmentIdx(&fr32.Fr32{Data: comm.Data}, offset, sizeDs)
 	assert.Nil(t, err2)
 	// We let the client segments be all the leafs
-	sizes := make([]int, sizeDA)
+	sizes := make([]uint64, sizeDA)
 	for i := range sizes {
 		sizes[i] = 1
 	}
 	incTree, err := MakeInclusionTree(dealTree.Leafs(), sizes, dealTree)
-	assert.Nil(t, err)
-	proofDs, err := MakeIndexProof(incTree, offset, sizeDA, sizeDA)
+	assert.NoError(t, err)
+	assert.NotNil(t, incTree)
+	proofDs, err := MakeIndexProof(incTree, offset, sizeDA, nSegments)
 	assert.Nil(t, err)
 	// Wrong amount of nodes in the deal
-	assert.False(t, VerifySegDescInclusion(entry, &fr32.Fr32{Data: incTree.Root().Data}, 1024, sizeDA, proofDs))
+	assert.False(t, VerifySegDescInclusion(entry, &fr32.Fr32{Data: incTree.Root().Data}, 1024, nSegments, proofDs))
 	// Too many segments
 	assert.False(t, VerifySegDescInclusion(entry, &fr32.Fr32{Data: incTree.Root().Data}, sizeDA, 257, proofDs))
 	// Wrong root node
-	assert.False(t, VerifySegDescInclusion(entry, &fr32.Fr32{Data: incTree.Node(2, 2).Data}, sizeDA, sizeDA, proofDs))
+	assert.False(t, VerifySegDescInclusion(entry, &fr32.Fr32{Data: incTree.Node(2, 2).Data}, sizeDA, nSegments, proofDs))
 	// Wrong segment index, consists of 2 nodes
 	wrongEntry, err2 := MakeDataSegmentIdx(&fr32.Fr32{Data: comm.Data}, offset, 2)
 	assert.Nil(t, err2)
-	assert.False(t, VerifySegDescInclusion(wrongEntry, &fr32.Fr32{Data: incTree.Node(2, 2).Data}, sizeDA, sizeDA, proofDs))
+	assert.False(t, VerifySegDescInclusion(wrongEntry, &fr32.Fr32{Data: incTree.Node(2, 2).Data}, sizeDA, nSegments, proofDs))
 	// Wrong index
-	wrongProofDs, err := MakeIndexProof(incTree, offset+1, sizeDA, sizeDA)
+	wrongProofDs, err := MakeIndexProof(incTree, offset+1, sizeDA, nSegments)
 	assert.Nil(t, err)
-	assert.False(t, VerifySegDescInclusion(entry, &fr32.Fr32{Data: incTree.Root().Data}, sizeDA, sizeDA, wrongProofDs))
+	assert.False(t, VerifySegDescInclusion(entry, &fr32.Fr32{Data: incTree.Root().Data}, sizeDA, nSegments, wrongProofDs))
 }
 
 func TestNegativeValidate(t *testing.T) {
-	sizeDA := 1235
-	offset := 123
-	leafData := getLeafs(0, sizeDA)
+	sizeDA := uint64(1235)
+	nSegments := int(sizeDA)
+	offset := uint64(123)
+	leafData := getLeafs(0, int(sizeDA))
 	dealTree, err := merkletree.GrowTree(leafData)
 	assert.Nil(t, err)
 	comm := dealTree.Leafs()[offset]
 	// We let the client segments be all the leafs
-	sizes := make([]int, sizeDA)
+	sizes := make([]uint64, sizeDA)
 	for i := range sizes {
 		sizes[i] = 1
 	}
@@ -340,29 +343,29 @@ func TestNegativeValidate(t *testing.T) {
 	subtreeProof, err := incTree.ConstructProof(incTree.Depth()-1, offset)
 	assert.Nil(t, err)
 	assert.True(t, VerifyInclusion(&fr32.Fr32{Data: comm.Data}, &fr32.Fr32{Data: incTree.Root().Data}, subtreeProof))
-	proofDs, err := MakeIndexProof(incTree, offset, sizeDA, sizeDA)
+	proofDs, err := MakeIndexProof(incTree, offset, sizeDA, nSegments)
 	assert.Nil(t, err)
-	assert.True(t, Validate(&fr32.Fr32{Data: comm.Data}, 1, &fr32.Fr32{Data: incTree.Root().Data}, sizeDA, sizeDA, subtreeProof, proofDs))
+	assert.True(t, Validate(&fr32.Fr32{Data: comm.Data}, 1, &fr32.Fr32{Data: incTree.Root().Data}, sizeDA, nSegments, subtreeProof, proofDs))
 	// Wrong sizeDs, should be 1
-	assert.False(t, Validate(&fr32.Fr32{Data: comm.Data}, 2, &fr32.Fr32{Data: incTree.Root().Data}, sizeDA, sizeDA, subtreeProof, proofDs))
+	assert.False(t, Validate(&fr32.Fr32{Data: comm.Data}, 2, &fr32.Fr32{Data: incTree.Root().Data}, sizeDA, nSegments, subtreeProof, proofDs))
 	// Wrong commitment for subtree, should be based on the deal leafs with offset
-	assert.False(t, Validate(&fr32.Fr32{Data: dealTree.Leafs()[offset+1].Data}, 1, &fr32.Fr32{Data: incTree.Root().Data}, sizeDA, sizeDA, subtreeProof, proofDs))
+	assert.False(t, Validate(&fr32.Fr32{Data: dealTree.Leafs()[offset+1].Data}, 1, &fr32.Fr32{Data: incTree.Root().Data}, sizeDA, nSegments, subtreeProof, proofDs))
 	// Wrong amount of leafs
 	assert.False(t, Validate(&fr32.Fr32{Data: comm.Data}, 1, &fr32.Fr32{Data: incTree.Root().Data}, sizeDA, 10000, subtreeProof, proofDs))
 	// Wrong index subtree
 	wrongProofDs, err := MakeIndexProof(incTree, offset, sizeDA, 1)
 	assert.Nil(t, err)
-	assert.False(t, Validate(&fr32.Fr32{Data: comm.Data}, 1, &fr32.Fr32{Data: incTree.Root().Data}, sizeDA, sizeDA, subtreeProof, wrongProofDs))
+	assert.False(t, Validate(&fr32.Fr32{Data: comm.Data}, 1, &fr32.Fr32{Data: incTree.Root().Data}, sizeDA, nSegments, subtreeProof, wrongProofDs))
 	// Wrong index subtree offset
-	wrongProofDs2, err := MakeIndexProof(incTree, 42, sizeDA, sizeDA)
+	wrongProofDs2, err := MakeIndexProof(incTree, 42, sizeDA, nSegments)
 	assert.Nil(t, err)
-	assert.False(t, Validate(&fr32.Fr32{Data: comm.Data}, 1, &fr32.Fr32{Data: incTree.Root().Data}, sizeDA, sizeDA, subtreeProof, wrongProofDs2))
+	assert.False(t, Validate(&fr32.Fr32{Data: comm.Data}, 1, &fr32.Fr32{Data: incTree.Root().Data}, sizeDA, nSegments, subtreeProof, wrongProofDs2))
 	// Wrong root
-	assert.False(t, Validate(&fr32.Fr32{Data: comm.Data}, 1, &fr32.Fr32{Data: incTree.Node(1, 0).Data}, sizeDA, sizeDA, subtreeProof, proofDs))
+	assert.False(t, Validate(&fr32.Fr32{Data: comm.Data}, 1, &fr32.Fr32{Data: incTree.Node(1, 0).Data}, sizeDA, nSegments, subtreeProof, proofDs))
 	// Wrong deal size
-	assert.False(t, Validate(&fr32.Fr32{Data: comm.Data}, 1, &fr32.Fr32{Data: incTree.Root().Data}, 5000, sizeDA, subtreeProof, proofDs))
+	assert.False(t, Validate(&fr32.Fr32{Data: comm.Data}, 1, &fr32.Fr32{Data: incTree.Root().Data}, 5000, nSegments, subtreeProof, proofDs))
 	// Wrong subtree, not a leaf
 	wrongSubtreeProof, err := incTree.ConstructProof(incTree.Depth()-2, offset)
 	assert.Nil(t, err)
-	assert.False(t, Validate(&fr32.Fr32{Data: comm.Data}, 1, &fr32.Fr32{Data: incTree.Root().Data}, sizeDA, sizeDA, wrongSubtreeProof, proofDs))
+	assert.False(t, Validate(&fr32.Fr32{Data: comm.Data}, 1, &fr32.Fr32{Data: incTree.Root().Data}, sizeDA, nSegments, wrongSubtreeProof, proofDs))
 }

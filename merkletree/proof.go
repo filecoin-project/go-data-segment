@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"log"
+	"math"
 
 	"github.com/filecoin-project/go-data-segment/fr32"
+	"golang.org/x/xerrors"
 )
 
 // MerkleProof represents a Merkle proof to a single leaf in a Merkle tree
@@ -20,7 +23,7 @@ type MerkleProof interface {
 	Level() int
 	// Index returns the index of the node which the proof validates
 	// The left-most node in a given level is 0
-	Index() int
+	Index() uint64
 	// ValidateLeaf ensures the correctness of the proof of a leaf against the root of a Merkle tree
 	ValidateLeaf(leafs []byte, root *Node) bool
 	// ValidateSubtree ensures the correctness of the proof of a subtree against the root of a Merkle tree
@@ -33,7 +36,7 @@ type proofData struct {
 	lvl int
 	// idx indicates the index within the level where the element whose membership to prove is located
 	// Leftmost node is index 0
-	idx int
+	idx uint64
 }
 
 // DeserializeProof deserializes a serialized proof
@@ -42,16 +45,19 @@ type proofData struct {
 // NOTE that correctness, nor the structure of the proof is NOT validated as part of this method
 func DeserializeProof(proof []byte) (MerkleProof, error) {
 	if proof == nil {
-		log.Println("no proof encoded")
-		return nil, errors.New("no proof encoded")
+		return nil, xerrors.New("no proof encoded")
 	}
 	nodes := (len(proof) - 2*BytesInInt) / fr32.BytesNeeded
 	if (len(proof)-2*BytesInInt)%fr32.BytesNeeded != 0 {
-		log.Printf("proof not properly encoded. Lengths is %d\n", len(proof))
 		return nil, errors.New("proof not properly encoded")
 	}
-	lvl := int(binary.LittleEndian.Uint64(proof[:BytesInInt]))
-	idx := int(binary.LittleEndian.Uint64(proof[BytesInInt : 2*BytesInInt]))
+	lvl := binary.LittleEndian.Uint64(proof[:BytesInInt])
+	fmt.Println("level", lvl)
+	if lvl > math.MaxInt32 {
+		return nil, xerrors.Errorf("lvl greater than max value")
+	}
+
+	idx := binary.LittleEndian.Uint64(proof[BytesInInt : 2*BytesInInt])
 	decoded := make([]Node, nodes)
 	ctr := 2 * BytesInInt
 	for i := 0; i < nodes; i++ {
@@ -61,12 +67,11 @@ func DeserializeProof(proof []byte) (MerkleProof, error) {
 	}
 	res := proofData{
 		path: decoded,
-		lvl:  lvl,
+		lvl:  int(lvl),
 		idx:  idx,
 	}
 	if !res.validateProofStructure() {
-		log.Println("the data does not contain a valid proof")
-		return nil, errors.New("the data does not contain a valid proof")
+		return nil, xerrors.New("the data does not contain a valid proof")
 	}
 	return res, nil
 }
@@ -111,7 +116,7 @@ func (d proofData) Level() int {
 }
 
 // Index returns the index of the node this proof validates, within the level returned by Level()
-func (d proofData) Index() int {
+func (d proofData) Index() uint64 {
 	return d.idx
 }
 

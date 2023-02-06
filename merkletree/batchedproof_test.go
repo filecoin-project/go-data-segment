@@ -1,8 +1,9 @@
 package merkletree
 
 import (
-	"github.com/stretchr/testify/assert"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // PUBLIC METHOD TESTS
@@ -13,9 +14,9 @@ func TestGettersSunshine(t *testing.T) {
 	right, errRight := tree.ConstructProof(1, 1)
 	assert.Nil(t, errRight)
 	proof := CreateBatchedProof(left, right)
-	assert.True(t, proof.ValidateSequence(&tree.(data).nodes[2][2], &tree.(data).nodes[1][1], tree.Root()))
-	assert.True(t, proof.LeftProof().ValidateSubtree(&tree.(data).nodes[2][2], tree.Root()))
-	assert.True(t, proof.RightProof().ValidateSubtree(&tree.(data).nodes[1][1], tree.Root()))
+	assert.True(t, proof.ValidateSequence(&tree.nodes[2][2], &tree.nodes[1][1], tree.Root()))
+	assert.True(t, proof.LeftProof().ValidateSubtree(&tree.nodes[2][2], tree.Root()))
+	assert.True(t, proof.RightProof().ValidateSubtree(&tree.nodes[1][1], tree.Root()))
 }
 
 func TestGettersEmptyProof(t *testing.T) {
@@ -26,7 +27,7 @@ func TestGettersEmptyProof(t *testing.T) {
 }
 
 func TestValidateSequence(t *testing.T) {
-	testAmounts := []int{130, 255, 256, 257, 1000000}
+	testAmounts := []uint64{130, 255, 256, 257, 1000000}
 	for _, amount := range testAmounts {
 		tree := getTree(t, amount)
 		// Construct a proof of a sequence of hashed leafs
@@ -38,23 +39,23 @@ func TestValidateSequence(t *testing.T) {
 		// Large amount
 		proof, err = tree.ConstructBatchedProof(tree.Depth()-1, 10, tree.Depth()-2, amount/3)
 		assert.Nil(t, err)
-		assert.True(t, proof.ValidateSequence(TruncatedHash(getLeaf(t, 10)), &tree.(data).nodes[tree.Depth()-2][amount/3], tree.Root()))
+		assert.True(t, proof.ValidateSequence(TruncatedHash(getLeaf(t, 10)), &tree.nodes[tree.Depth()-2][amount/3], tree.Root()))
 
 		// Right-most subtree
 		proof, err = tree.ConstructBatchedProof(tree.Depth()-3, 0, tree.Depth()-1, amount-1)
 		assert.Nil(t, err)
-		assert.True(t, proof.ValidateSequence(&tree.(data).nodes[tree.Depth()-3][0], TruncatedHash(getLeaf(t, amount-1)), tree.Root()))
+		assert.True(t, proof.ValidateSequence(&tree.nodes[tree.Depth()-3][0], TruncatedHash(getLeaf(t, amount-1)), tree.Root()))
 
 		// Subtree
 		proof, err = tree.ConstructBatchedProof(tree.Depth()-3, 5, tree.Depth()-2, 1)
 		assert.Nil(t, err)
-		assert.True(t, proof.ValidateSequence(&tree.(data).nodes[tree.Depth()-3][5], &tree.(data).nodes[tree.Depth()-2][1], tree.Root()))
+		assert.True(t, proof.ValidateSequence(&tree.nodes[tree.Depth()-3][5], &tree.nodes[tree.Depth()-2][1], tree.Root()))
 	}
 }
 
 // NEGATIVE TESTING
 func TestNegativeValidateSequence(t *testing.T) {
-	testAmounts := []int{130, 255, 256, 257, 1000000}
+	testAmounts := []uint64{130, 255, 256, 257, 1000000}
 	for _, amount := range testAmounts {
 		tree := getTree(t, amount)
 		// Construct a proof of a leaf node
@@ -65,13 +66,13 @@ func TestNegativeValidateSequence(t *testing.T) {
 				// Corrupt a bit in a node
 				// Note that modifying the most significant bits of the last byte will still result in failure even tough those bits should never be set
 				proof.(batchedProofData).leftPath[currentLvl].Data[i] ^= 0b10000000
-				assert.False(t, proof.ValidateSequence(&tree.(data).nodes[tree.Depth()-2][9], &tree.(data).nodes[tree.Depth()-2][31], tree.Root()))
+				assert.False(t, proof.ValidateSequence(&tree.nodes[tree.Depth()-2][9], &tree.nodes[tree.Depth()-2][31], tree.Root()))
 				// Revert the modification of the left proof and try the right proof
 				proof.(batchedProofData).leftPath[currentLvl].Data[i] ^= 0b10000000
 
-				assert.True(t, proof.ValidateSequence(&tree.(data).nodes[tree.Depth()-2][9], &tree.(data).nodes[tree.Depth()-2][31], tree.Root()))
+				assert.True(t, proof.ValidateSequence(&tree.nodes[tree.Depth()-2][9], &tree.nodes[tree.Depth()-2][31], tree.Root()))
 				proof.(batchedProofData).rightPath[currentLvl].Data[i] ^= 0b10000000
-				assert.False(t, proof.ValidateSequence(&tree.(data).nodes[tree.Depth()-2][9], &tree.(data).nodes[tree.Depth()-2][31], tree.Root()))
+				assert.False(t, proof.ValidateSequence(&tree.nodes[tree.Depth()-2][9], &tree.nodes[tree.Depth()-2][31], tree.Root()))
 				// Reset the right proof
 				proof.(batchedProofData).rightPath[currentLvl].Data[i] ^= 0b10000000
 			}
@@ -80,7 +81,7 @@ func TestNegativeValidateSequence(t *testing.T) {
 }
 
 func TestValidateLeafSequence(t *testing.T) {
-	testAmounts := []int{42, 234, 4564, 4869}
+	testAmounts := []uint64{42, 234, 4564, 4869}
 	for _, amount := range testAmounts {
 		tree := getTree(t, amount)
 		proof, err := tree.ConstructBatchedProof(tree.Depth()-1, 5, tree.Depth()-1, 10)
@@ -100,7 +101,7 @@ func TestValidateLeafSequence(t *testing.T) {
 
 // NEGATIVE TESTING
 func TestNegativeValidateLeafs(t *testing.T) {
-	testAmounts := []int{68, 511, 512, 513, 1000000}
+	testAmounts := []uint64{68, 511, 512, 513, 1000000}
 	for _, amount := range testAmounts {
 		tree := getTree(t, amount)
 		// Construct a proof of a leaf node
@@ -131,7 +132,7 @@ func TestNegativeErrorInLeaf(t *testing.T) {
 	assert.Nil(t, err)
 	assert.True(t, proof.ValidateLeafs(getLeafs(t, 53, 56-53+1), 53, tree))
 	// Modify a leaf
-	tree.(data).nodes[tree.Depth()-1][56].Data[0] ^= 0b00100000
+	tree.nodes[tree.Depth()-1][56].Data[0] ^= 0b00100000
 	assert.False(t, proof.ValidateLeafs(getLeafs(t, 53, 56-53+1), 53, tree))
 }
 
@@ -149,11 +150,7 @@ func TestNegativeBadLevel(t *testing.T) {
 
 func TestNegativeBadIndex(t *testing.T) {
 	tree := getTree(t, 12)
-	_, err := tree.ConstructBatchedProof(tree.Depth()-1, -1, tree.Depth()-1, 1)
-	assert.NotNil(t, err)
-	_, err = tree.ConstructBatchedProof(tree.Depth()-1, 0, tree.Depth()-1, -1)
-	assert.NotNil(t, err)
-	_, err = tree.ConstructBatchedProof(tree.Depth()-1, 0, tree.Depth()-1, 10000)
+	_, err := tree.ConstructBatchedProof(tree.Depth()-1, 0, tree.Depth()-1, 10000)
 	assert.NotNil(t, err)
 	_, err = tree.ConstructBatchedProof(tree.Depth()-1, 10000, tree.Depth()-1, 1)
 	assert.NotNil(t, err)

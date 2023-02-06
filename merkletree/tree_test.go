@@ -2,7 +2,6 @@ package merkletree
 
 import (
 	"encoding/hex"
-	"reflect"
 	"testing"
 
 	"github.com/filecoin-project/go-data-segment/util"
@@ -30,12 +29,12 @@ func TestGrowTreeSunshine(t *testing.T) {
 	assert.Nil(t, err)
 
 	assert.Equal(t, 2, tree.Depth())
-	assert.Equal(t, 2, tree.LeafCount())
-	assert.Equal(t, 2, len(tree.(data).nodes))
-	assert.Equal(t, 1, len(tree.(data).nodes[0]))
-	assert.Equal(t, 2, len(tree.(data).nodes[1]))
-	assert.Equal(t, expectedLeaf, tree.(data).nodes[1][0].Data[:])
-	assert.Equal(t, expectedLeaf, tree.(data).nodes[1][1].Data[:])
+	assert.Equal(t, uint64(2), tree.LeafCount())
+	assert.Equal(t, 2, len(tree.nodes))
+	assert.Equal(t, 1, len(tree.nodes[0]))
+	assert.Equal(t, 2, len(tree.nodes[1]))
+	assert.Equal(t, expectedLeaf, tree.nodes[1][0].Data[:])
+	assert.Equal(t, expectedLeaf, tree.nodes[1][1].Data[:])
 	assert.Equal(t, expectedRoot, (*tree.Root()).Data[:])
 }
 
@@ -57,21 +56,21 @@ func TestGrowTreeOdd(t *testing.T) {
 	assert.Nil(t, err)
 
 	assert.Equal(t, 3, tree.Depth())
-	assert.Equal(t, 3, tree.LeafCount())
-	assert.Equal(t, 3, len(tree.(data).nodes))
-	assert.Equal(t, 1, len(tree.(data).nodes[0]))
-	assert.Equal(t, 2, len(tree.(data).nodes[1]))
-	assert.Equal(t, 3, len(tree.(data).nodes[2]))
-	assert.Equal(t, expectedLeaf, tree.(data).nodes[2][0].Data[:])
-	assert.Equal(t, expectedLeaf, tree.(data).nodes[2][1].Data[:])
-	assert.Equal(t, expectedLeaf, tree.(data).nodes[2][2].Data[:])
-	assert.Equal(t, expectedLeftMiddleNode, tree.(data).nodes[1][0].Data[:])
-	assert.Equal(t, expectedRightMiddleNode, tree.(data).nodes[1][1].Data[:])
+	assert.Equal(t, uint64(3), tree.LeafCount())
+	assert.Equal(t, 3, len(tree.nodes))
+	assert.Equal(t, 1, len(tree.nodes[0]))
+	assert.Equal(t, 2, len(tree.nodes[1]))
+	assert.Equal(t, 4, len(tree.nodes[2]))
+	assert.Equal(t, expectedLeaf, tree.nodes[2][0].Data[:])
+	assert.Equal(t, expectedLeaf, tree.nodes[2][1].Data[:])
+	assert.Equal(t, expectedLeaf, tree.nodes[2][2].Data[:])
+	assert.Equal(t, expectedLeftMiddleNode, tree.nodes[1][0].Data[:])
+	assert.Equal(t, expectedRightMiddleNode, tree.nodes[1][1].Data[:])
 	assert.Equal(t, expectedRoot, (*tree.Root()).Data[:])
 }
 
 func TestGrowTreeSoak(t *testing.T) {
-	for amount := 4; amount < 125; amount++ {
+	for amount := uint64(4); amount < 125; amount++ {
 		tree := getTree(t, amount)
 
 		assert.Equal(t, 1+util.Log2Ceil(uint64(amount)), tree.Depth())
@@ -81,18 +80,18 @@ func TestGrowTreeSoak(t *testing.T) {
 }
 
 func TestTreeSerialization(t *testing.T) {
-	testAmounts := []int{2, 3, 4, 55, 555}
+	testAmounts := []uint64{2, 3, 4, 55, 555}
 	for _, amount := range testAmounts {
 		tree := getTree(t, amount)
 		assert.True(t, tree.Validate())
 		encoded, errEnc := tree.Serialize()
-		assert.Nil(t, errEnc)
+		assert.NoError(t, errEnc)
 		assert.NotNil(t, encoded)
 		decoded, errDec := DeserializeTree(encoded)
-		assert.Nil(t, errDec)
+		assert.NoError(t, errDec)
 		assert.NotNil(t, decoded)
+		assert.Equal(t, tree, decoded)
 		assert.True(t, decoded.Validate())
-		assert.True(t, reflect.DeepEqual(tree, decoded))
 	}
 }
 
@@ -104,21 +103,21 @@ func TestConstructProof(t *testing.T) {
 	assert.Nil(t, err)
 
 	assert.Equal(t, proof.Level(), util.Log2Ceil(uint64(tree.LeafCount())))
-	assert.Equal(t, proof.Index(), 55)
+	assert.Equal(t, proof.Index(), uint64(55))
 	assert.Equal(t, len(proof.Path()), tree.Depth()-1)
 }
 
 func TestValidateFromLeafs(t *testing.T) {
-	testAmounts := []int{33, 235, 543}
+	testAmounts := []uint64{33, 235, 543}
 	for _, amount := range testAmounts {
 		tree := getTree(t, amount)
 		leafs := getLeafs(t, 0, amount)
-		assert.True(t, tree.ValidateFromLeafs(leafs))
+		assert.NoError(t, tree.ValidateFromLeafs(leafs))
 	}
 }
 
 func TestValidate(t *testing.T) {
-	testAmounts := []int{80, 1023, 1024, 1025}
+	testAmounts := []uint64{80, 1023, 1024, 1025}
 	for _, amount := range testAmounts {
 		tree := getTree(t, amount)
 		assert.True(t, tree.Validate())
@@ -126,12 +125,12 @@ func TestValidate(t *testing.T) {
 }
 
 func TestNegativeValidate(t *testing.T) {
-	testAmounts := []int{42, 1023, 1024, 1025}
+	testAmounts := []uint64{42, 1023, 1024, 1025}
 	for _, amount := range testAmounts {
 		tree := getTree(t, amount)
 
 		// Corrupt a bit in a node
-		tree.(data).nodes[3][3].Data[3] ^= 0b10000000
+		tree.nodes[3][3].Data[3] ^= 0b10000000
 		assert.False(t, tree.Validate())
 	}
 }
@@ -145,7 +144,7 @@ func TestNegativeGrowTree(t *testing.T) {
 
 func TestNegativeSerializationEmptyTree(t *testing.T) {
 	tree := getTree(t, 1)
-	tree.(data).nodes[tree.Depth()-1] = make([]Node, 0)
+	tree.nodes[tree.Depth()-1] = make([]Node, 0)
 	encoded, err := tree.Serialize()
 	assert.Nil(t, err)
 	_, errDec := DeserializeTree(encoded)
@@ -154,7 +153,7 @@ func TestNegativeSerializationEmptyTree(t *testing.T) {
 
 func TestNegativeSerializationWrongSize(t *testing.T) {
 	tree := getTree(t, 128)
-	tree.(data).nodes[tree.Depth()-2] = make([]Node, 1)
+	tree.nodes[tree.Depth()-2] = make([]Node, 1)
 	encoded, err := tree.Serialize()
 	assert.Nil(t, err)
 	_, errDec := DeserializeTree(encoded)
@@ -176,16 +175,14 @@ func TestNegativeConstructProof(t *testing.T) {
 	assert.NotNil(t, err)
 	_, err = tree.ConstructProof(2, 20)
 	assert.NotNil(t, err)
-	_, err = tree.ConstructProof(2, -1)
-	assert.NotNil(t, err)
 }
 
 func TestNegativeValidateFromLeafs(t *testing.T) {
 	tree := getTree(t, 20)
-	assert.False(t, tree.ValidateFromLeafs(nil))
-	assert.False(t, tree.ValidateFromLeafs([][]byte{}))
+	assert.Error(t, tree.ValidateFromLeafs(nil))
+	assert.Error(t, tree.ValidateFromLeafs([][]byte{}))
 	notEnough := make([][]byte, 19)
-	assert.False(t, tree.ValidateFromLeafs(notEnough))
+	assert.Error(t, tree.ValidateFromLeafs(notEnough))
 }
 
 // PRIVATE METHOD TESTS
@@ -258,23 +255,23 @@ func TestHashList(t *testing.T) {
 // HELPER METHODS
 // Builds an arbitrary tree of equal leaf nodes.
 // Each leaf is defined to be the base XORed with their index
-func getTree(t *testing.T, leafs int) MerkleTree {
+func getTree(t *testing.T, leafs uint64) *data {
 	leafData := getLeafs(t, 0, leafs)
 	tree, err := GrowTree(leafData)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	return tree
 }
 
-func getLeafs(t *testing.T, startIdx int, amount int) [][]byte {
+func getLeafs(t *testing.T, startIdx uint64, amount uint64) [][]byte {
 	leafs := make([][]byte, amount)
-	for i := 0; i < amount; i++ {
+	for i := uint64(0); i < amount; i++ {
 		leafs[i] = getLeaf(t, i+startIdx)
 	}
 	return leafs
 }
 
 // getLeaf returns a leaf which is 0xdeadbeef XORed with idx
-func getLeaf(t *testing.T, idx int) []byte {
+func getLeaf(t *testing.T, idx uint64) []byte {
 	singletonInput, err := hex.DecodeString("deadbeef")
 	assert.Nil(t, err)
 	singletonInput[0] ^= byte(idx)

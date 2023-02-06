@@ -28,11 +28,11 @@ type batchedProofData struct {
 	leftLvl int
 	// leftIdx indicates the index within leftLvl where the left-most node whose membership to prove is located.
 	// Indexing starts at 0
-	leftIdx int
+	leftIdx uint64
 	// rightLvl indicates the level in the Merkle tree where the right-most node is located. Root has level 0
 	rightLvl int
 	// rightIdx indicates the index within rightLvl where the right-most node whose membership to prove is located.
-	rightIdx int
+	rightIdx uint64
 }
 
 func (b batchedProofData) LeftProof() MerkleProof {
@@ -72,7 +72,7 @@ func (b batchedProofData) ValidateSequence(leftSubtree *Node, rightSubtree *Node
 	return true
 }
 
-func (b batchedProofData) getSubproof(subPath []Node, lvl int, idx int) MerkleProof {
+func (b batchedProofData) getSubproof(subPath []Node, lvl int, idx uint64) MerkleProof {
 	// Reconstruct the full path
 	fullPath := make([]Node, len(b.commonPath)+len(subPath))
 	copy(fullPath, b.commonPath)
