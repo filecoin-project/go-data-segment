@@ -2,10 +2,11 @@ package merkletree
 
 import (
 	"encoding/hex"
-	"github.com/filecoin-project/go-data-segment/util"
-	"github.com/stretchr/testify/assert"
 	"reflect"
 	"testing"
+
+	"github.com/filecoin-project/go-data-segment/util"
+	"github.com/stretchr/testify/assert"
 )
 
 /**
@@ -46,14 +47,13 @@ func TestGrowTreeOdd(t *testing.T) {
 
 	tree, err := GrowTree(input)
 	assert.Nil(t, err)
-
 	expectedLeaf, err := hex.DecodeString("038051e9c324393bd1ca1978dd0952c2aa3742ca4f1bd5cd4611cea83892d302")
 	assert.Nil(t, err)
 	expectedLeftMiddleNode, err := hex.DecodeString("90a4a4c485b44abecda2c404e4a56df371c9f7c6f23f396f4c63903acf65d638")
 	assert.Nil(t, err)
-	expectedRightMiddleNode, err := hex.DecodeString("f38494aa397bf51c8491d20d8e34249958b19e57db5c7d29676c897c7f3ddf13")
+	expectedRightMiddleNode, err := hex.DecodeString("01b2a169f7d05abbddc3d8f11cd675df31cc50b9d4324b17fb4ce17db987fd29")
 	assert.Nil(t, err)
-	expectedRoot, err := hex.DecodeString("ea0e5293bdbc7e98142f57d1cc83ec00592acb23515043641322bcc99a03b20b")
+	expectedRoot, err := hex.DecodeString("088c2038d048af2e754df3cb8373cd9f7c15c8610f6e4a6b93b364cae5f85907")
 	assert.Nil(t, err)
 
 	assert.Equal(t, 3, tree.Depth())

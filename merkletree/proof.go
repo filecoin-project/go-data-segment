@@ -4,8 +4,9 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
-	"github.com/filecoin-project/go-data-segment/fr32"
 	"log"
+
+	"github.com/filecoin-project/go-data-segment/fr32"
 )
 
 // MerkleProof represents a Merkle proof to a single leaf in a Merkle tree
@@ -136,19 +137,11 @@ func (d proofData) validateProof(subtree *Node, root *Node) bool {
 	for currentLvl := d.lvl; currentLvl >= 1; currentLvl-- {
 		sibIdx := getSiblingIdx(currentIdx)
 		sibling := d.path[currentLvl-1]
-		// If the node is all-0 then it means it does not exist
-		// It is fine to assume this "magic" array since all nodes will be hash digests and so the all-0 string
-		// will only happen with negligible probability
-		if sibling.Data == [digestBytes]byte{} {
-			// In case the node does not exist, the only child will be hashed
-			parent = TruncatedHash(currentNode.Data[:])
+		// If the sibling is "right" then we must hash currentNode first
+		if sibIdx%2 == 1 {
+			parent = computeNode(currentNode, &sibling)
 		} else {
-			// If the sibling is "right" then we must hash currentNode first
-			if sibIdx%2 == 1 {
-				parent = computeNode(currentNode, &sibling)
-			} else {
-				parent = computeNode(&sibling, currentNode)
-			}
+			parent = computeNode(&sibling, currentNode)
 		}
 		currentNode = parent
 		currentIdx = currentIdx / 2
