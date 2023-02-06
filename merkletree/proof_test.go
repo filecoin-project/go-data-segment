@@ -15,14 +15,14 @@ func TestValidateLeafSunshine(t *testing.T) {
 		tree := getTree(t, amount)
 		// Construct a proof of a leaf node
 		proof, err := tree.ConstructProof(tree.Depth()-1, 0)
-		assert.Nil(t, err)
-		assert.True(t, proof.ValidateLeaf(getLeaf(t, 0), tree.Root()))
+		assert.NoError(t, err)
+		assert.NoError(t, proof.ValidateLeaf(getLeaf(t, 0), tree.Root()))
 		proof, err = tree.ConstructProof(tree.Depth()-1, amount-1)
-		assert.Nil(t, err)
-		assert.True(t, proof.ValidateLeaf(getLeaf(t, amount-1), tree.Root()))
+		assert.NoError(t, err)
+		assert.NoError(t, proof.ValidateLeaf(getLeaf(t, amount-1), tree.Root()))
 		proof, err = tree.ConstructProof(tree.Depth()-1, amount/2-5)
-		assert.Nil(t, err)
-		assert.True(t, proof.ValidateLeaf(getLeaf(t, amount/2-5), tree.Root()))
+		assert.NoError(t, err)
+		assert.NoError(t, proof.ValidateLeaf(getLeaf(t, amount/2-5), tree.Root()))
 	}
 }
 
@@ -32,14 +32,14 @@ func TestProofSerialization(t *testing.T) {
 		tree := getTree(t, amount)
 		proof, errProof := tree.ConstructProof(util.Log2Ceil(uint64(amount)), 1)
 		assert.Nil(t, errProof)
-		assert.True(t, proof.ValidateSubtree(&tree.nodes[util.Log2Ceil(uint64(amount))][1], tree.Root()))
+		assert.NoError(t, proof.ValidateSubtree(&tree.nodes[util.Log2Ceil(uint64(amount))][1], tree.Root()))
 		encoded, errEnc := proof.Serialize()
 		assert.Nil(t, errEnc)
 		assert.NotNil(t, encoded)
 		decoded, errDec := DeserializeProof(encoded)
 		assert.Nil(t, errDec)
 		assert.NotNil(t, decoded)
-		assert.True(t, proof.ValidateSubtree(&tree.nodes[util.Log2Ceil(uint64(amount))][1], tree.Root()))
+		assert.NoError(t, proof.ValidateSubtree(&tree.nodes[util.Log2Ceil(uint64(amount))][1], tree.Root()))
 		assert.True(t, reflect.DeepEqual(proof, decoded))
 	}
 }
@@ -50,14 +50,14 @@ func TestNegativeValidateLeaf(t *testing.T) {
 		tree := getTree(t, amount)
 		// Construct a proof of a leaf node
 		proof, err := tree.ConstructProof(tree.Depth()-1, 4)
-		assert.Nil(t, err)
-		assert.True(t, proof.ValidateLeaf(getLeaf(t, 4), tree.Root()))
+		assert.NoError(t, err)
+		assert.NoError(t, proof.ValidateLeaf(getLeaf(t, 4), tree.Root()))
 		for currentLvl := 0; currentLvl < tree.Depth()-1; currentLvl++ {
 			for i := 0; i < digestBytes; i++ {
 				// Corrupt a bit in a node
 				// Note that modifying the most significant bits of the last byte will still result in failure even tough those bits should never be set
 				proof.Path()[currentLvl].Data[i] ^= 0b10000000
-				assert.False(t, proof.ValidateLeaf(getLeaf(t, 4), tree.Root()))
+				assert.Error(t, proof.ValidateLeaf(getLeaf(t, 4), tree.Root()))
 				// Reset the proof
 				proof.Path()[currentLvl].Data[i] ^= 0b10000000
 			}
@@ -72,18 +72,18 @@ func TestValidateProofSubtree(t *testing.T) {
 		for lvl := 1; lvl < tree.Depth(); lvl++ {
 			// Test the smallest node in the level
 			proof, err := tree.ConstructProof(lvl, 0)
-			assert.Nil(t, err)
-			assert.True(t, proof.ValidateSubtree(&tree.nodes[lvl][0], tree.Root()))
+			assert.NoError(t, err)
+			assert.NoError(t, proof.ValidateSubtree(&tree.nodes[lvl][0], tree.Root()))
 
 			// Test the largest node in the level
 			proof, err = tree.ConstructProof(lvl, uint64(len(tree.nodes[lvl])-1))
-			assert.Nil(t, err)
-			assert.True(t, proof.ValidateSubtree(&tree.nodes[lvl][len(tree.nodes[lvl])-1], tree.Root()))
+			assert.NoError(t, err)
+			assert.NoError(t, proof.ValidateSubtree(&tree.nodes[lvl][len(tree.nodes[lvl])-1], tree.Root()))
 
 			// Test a node in the middle of the level
 			proof, err = tree.ConstructProof(lvl, uint64(len(tree.nodes[lvl])/3))
-			assert.Nil(t, err)
-			assert.True(t, proof.ValidateSubtree(&tree.nodes[lvl][len(tree.nodes[lvl])/3], tree.Root()))
+			assert.NoError(t, err)
+			assert.NoError(t, proof.ValidateSubtree(&tree.nodes[lvl][len(tree.nodes[lvl])/3], tree.Root()))
 		}
 	}
 }
@@ -99,7 +99,7 @@ func TestNegativeValidateSubtree(t *testing.T) {
 			assert.NoError(t, err)
 			// Corrupt a bit in a node
 			proof.Path()[currentLvl/3].Data[0] ^= 0b10000000
-			assert.False(t, proof.ValidateSubtree(&tree.nodes[currentLvl][idx], tree.Root()))
+			assert.Error(t, proof.ValidateSubtree(&tree.nodes[currentLvl][idx], tree.Root()))
 		}
 	}
 }
@@ -114,9 +114,9 @@ func TestNegativeSerializationProofEmpty(t *testing.T) {
 func TestNegativeSerializationProofWrongSize(t *testing.T) {
 	tree := getTree(t, 345)
 	proof, err := tree.ConstructProof(5, 12)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	encoded, err := proof.Serialize()
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	// Incorrect size of proof
 	_, errDec := DeserializeProof(encoded[:2*BytesInInt+1])
 	assert.Error(t, errDec)
@@ -125,9 +125,9 @@ func TestNegativeSerializationProofWrongSize(t *testing.T) {
 func TestNegativeSerializationProofZeroLevel(t *testing.T) {
 	tree := getTree(t, 345)
 	proof, err := tree.ConstructProof(5, 12)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	encoded, err := proof.Serialize()
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	// Set level to 0
 	for i := 0; i < BytesInInt; i++ {
 		encoded[i] = 0b00000000
@@ -139,9 +139,9 @@ func TestNegativeSerializationProofZeroLevel(t *testing.T) {
 func TestNegativeSerializationProofNegativeIndex(t *testing.T) {
 	tree := getTree(t, 345)
 	proof, err := tree.ConstructProof(5, 12)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	encoded, err := proof.Serialize()
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	// Set level to MaxUint
 	for i := 0; i < 2*BytesInInt; i++ {
 		encoded[i] = 0xFF

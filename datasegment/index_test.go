@@ -1,7 +1,6 @@
 package datasegment
 
 import (
-	"reflect"
 	"testing"
 
 	"github.com/filecoin-project/go-data-segment/fr32"
@@ -53,23 +52,23 @@ func validIndex(t *testing.T) *IndexData {
 func TestIndexSerializationValidation(t *testing.T) {
 	index := validIndex(t)
 	encoded, err4 := SerializeIndex(index)
-	assert.Nil(t, err4)
+	assert.NoError(t, err4)
 	assert.NotNil(t, encoded)
 	decoded, err5 := DeserializeIndex(index.DealSize(), encoded)
-	assert.Nil(t, err5)
+	assert.NoError(t, err5)
 	assert.NotNil(t, decoded)
-	assert.True(t, reflect.DeepEqual(*index, decoded))
+	assert.Equal(t, index, decoded)
 }
 
 // PRIVATE METHODS
 func TestIndexSerialization(t *testing.T) {
 	index := invalidIndex()
 	assert.Equal(t, 2, index.NumberEntries())
-	assert.Equal(t, 2*64, index.IndexSize())
-	assert.Equal(t, 100000, index.DealSize())
-	assert.Equal(t, 100000-2*64, index.Start())
+	assert.Equal(t, uint64(2*64), index.IndexSize())
+	assert.Equal(t, uint64(100000), index.DealSize())
+	assert.Equal(t, uint64(100000-2*64), index.Start())
 	encoded, err := serializeIndex(index)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.NotNil(t, encoded)
 	decoded, err := deserializeIndex(index.DealSize(), encoded)
 	assert.NoError(t, err)
@@ -80,7 +79,7 @@ func TestIndexSerialization(t *testing.T) {
 	assert.Equal(t, index.SegmentDesc(0), decoded.SegmentDesc(0))
 	assert.Equal(t, index.SegmentDesc(1), decoded.SegmentDesc(1))
 	assert.Equal(t, index.DealSize(), decoded.DealSize())
-	assert.True(t, reflect.DeepEqual(*index, decoded))
+	assert.Equal(t, index, decoded)
 }
 
 func TestLargeSizes(t *testing.T) {

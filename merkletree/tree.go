@@ -46,7 +46,7 @@ type MerkleTree interface {
 	Serialize() ([]byte, error)
 }
 
-type data struct {
+type TreeData struct {
 	// nodes start from root and go down left-to-right
 	// thus len(nodes[0]) = 1, len(nodes[1]) = 2, etc.
 	nodes [][]Node
@@ -54,7 +54,7 @@ type data struct {
 	leafs uint64
 }
 
-var _ MerkleTree = data{}
+var _ MerkleTree = TreeData{}
 
 type Node struct {
 	Data [digestBytes]byte
@@ -63,9 +63,9 @@ type Node struct {
 // newBareTree allocates that memory needed to construct a tree with a specific amount of leafs.
 // The construction rounds the amount of leafs up to the nearest two-power with zeroed nodes to ensure
 // that the tree is perfect and hence all internal node's have well-defined children.
-func newBareTree(leafs uint64) *data {
+func newBareTree(leafs uint64) *TreeData {
 	adjustedLeafs := 1 << util.Log2Ceil(uint64(leafs))
-	var tree data
+	var tree TreeData
 	tree.nodes = make([][]Node, 1+util.Log2Ceil(uint64(adjustedLeafs)))
 	tree.leafs = leafs
 	for i := 0; i <= util.Log2Ceil(uint64(adjustedLeafs)); i++ {
@@ -78,7 +78,7 @@ func newBareTree(leafs uint64) *data {
 // This is done by first reading the amount of leafs as a 64 bit int
 // Then decoding the tree, bottom-up, starting with the leafs as the amount of nodes in one level defines the amount of nodes in its parent level
 // NOTE that correctness of the tree is NOT validated as part of this method
-func DeserializeTree(tree []byte) (*data, error) {
+func DeserializeTree(tree []byte) (*TreeData, error) {
 	if tree == nil || len(tree) < BytesInInt {
 		return nil, xerrors.New("no tree encoded")
 	}
@@ -101,14 +101,14 @@ func DeserializeTree(tree []byte) (*data, error) {
 		// The amount of nodes in the parent level is half, rounded up
 		lvlSize = lvlSize >> 1
 	}
-	return &decoded, nil
+	return decoded, nil
 }
 
 // GrowTree constructs a Merkle from a list of leafData, the data of a given leaf is represented as a byte slice
 // The construction rounds the amount of leafs up to the nearest two-power with zeroed nodes to ensure
 // that the tree is perfect and hence all internal node's have well-defined children.
 // TODO should things be hard-coded to work on 32 byte leafs?
-func GrowTree(leafData [][]byte) (*data, error) {
+func GrowTree(leafData [][]byte) (*TreeData, error) {
 	if len(leafData) == 0 {
 		return nil, errors.New("empty input")
 	}
@@ -117,7 +117,7 @@ func GrowTree(leafData [][]byte) (*data, error) {
 }
 
 // GrowTreeHashedLeafs constructs a tree from leafs nodes, i.e. leaf data that has been hashed to construct a Node
-func GrowTreeHashedLeafs(leafs []Node) *data {
+func GrowTreeHashedLeafs(leafs []Node) *TreeData {
 	tree := newBareTree(uint64(len(leafs)))
 	tree.leafs = uint64(len(leafs))
 	// Set the padded leaf nodes
@@ -134,7 +134,7 @@ func GrowTreeHashedLeafs(leafs []Node) *data {
 		tree.nodes[level] = currentLevel
 		parentNodes = currentLevel
 	}
-	return &tree
+	return tree
 }
 
 func padLeafs(leafs []Node) []Node {
@@ -149,32 +149,32 @@ func padLeafs(leafs []Node) []Node {
 
 // Depth returns the amount of levels in the tree, including the root level and leafs.
 // I.e. a tree with 3 leafs will have one leaf level, a middle level and a root, and hence Depth 3.
-func (d data) Depth() int {
+func (d TreeData) Depth() int {
 	return len(d.nodes)
 }
 
 // LeafCount returns the amount of non-zero padded leafs in the tree
-func (d data) LeafCount() uint64 {
+func (d TreeData) LeafCount() uint64 {
 	return d.leafs
 }
 
 // Root returns a pointer to the root node
-func (d data) Root() *Node {
+func (d TreeData) Root() *Node {
 	return &d.nodes[0][0]
 }
 
 // Leafs return a slice consisting of all the leaf nodes, i.e. leaf data that has been hashed into a Node structure
-func (d data) Leafs() []Node {
+func (d TreeData) Leafs() []Node {
 	return d.nodes[len(d.nodes)-1]
 }
 
 // Node returns the node at given lvl and idx
-func (d data) Node(lvl int, idx uint64) *Node {
+func (d TreeData) Node(lvl int, idx uint64) *Node {
 	return &d.nodes[lvl][int(idx)]
 }
 
 // ValidateFromLeafs validates the structure of this Merkle tree, given the raw data elements the tree was constructed from
-func (d data) ValidateFromLeafs(leafs [][]byte) error {
+func (d TreeData) ValidateFromLeafs(leafs [][]byte) error {
 	tree, err := GrowTree(leafs)
 	if err != nil {
 		return xerrors.Errorf("grow tree: %w", err)
@@ -186,14 +186,14 @@ func (d data) ValidateFromLeafs(leafs [][]byte) error {
 }
 
 // Validate returns true of this tree has been constructed correctly from the leafs (hashed data)
-func (d data) Validate() bool {
+func (d TreeData) Validate() bool {
 	tree := GrowTreeHashedLeafs(d.nodes[d.Depth()-1])
 	return reflect.DeepEqual(d.nodes, tree.nodes)
 }
 
 // ConstructProof constructs a proof that a node at level lvl and index idx within that level, is contained in the tree.
 // The root is in level 0 and the left-most node in a given level is indexed 0.
-func (d data) ConstructProof(lvl int, idx uint64) (MerkleProof, error) {
+func (d TreeData) ConstructProof(lvl int, idx uint64) (MerkleProof, error) {
 	if lvl < 1 || lvl >= d.Depth() {
 		log.Printf("level is either below 1 or bigger than the tree supports\n")
 		return nil, fmt.Errorf("level is either below 1 or bigger than the tree supports")
@@ -227,7 +227,7 @@ func (d data) ConstructProof(lvl int, idx uint64) (MerkleProof, error) {
 // The proof contains everything captured by the node in leftLvl level at index leftIdx up to and INCLUDING everything
 // contained by the node in rightLvl level and rightIdx index.
 // The root is in level 0 and the left-most node in a given level is indexed 0.
-func (d data) ConstructBatchedProof(leftLvl int, leftIdx uint64, rightLvl int, rightIdx uint64) (BatchedMerkleProof, error) {
+func (d TreeData) ConstructBatchedProof(leftLvl int, leftIdx uint64, rightLvl int, rightIdx uint64) (BatchedMerkleProof, error) {
 	if leftLvl < 1 || leftLvl >= d.Depth() || rightLvl < 1 || rightLvl >= d.Depth() {
 		log.Println("a level is either below 1 or bigger than the tree supports")
 		return batchedProofData{}, errors.New("a level is either below 1 or bigger than the tree supports")
@@ -252,7 +252,7 @@ func (d data) ConstructBatchedProof(leftLvl int, leftIdx uint64, rightLvl int, r
 // This is done by first including the amount of leafs as a 64 bit unsigned int
 // Then encode the tree, bottom-up, starting with the leafs as the amount of nodes in one level defines the amount of nodes in its parent level
 // NOTE that correctness of the tree is NOT validated as part of this method
-func (d data) Serialize() ([]byte, error) {
+func (d TreeData) Serialize() ([]byte, error) {
 	buf := new(bytes.Buffer)
 	err := binary.Write(buf, binary.LittleEndian, uint64(d.LeafCount()))
 	if err != nil {

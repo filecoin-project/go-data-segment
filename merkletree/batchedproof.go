@@ -61,12 +61,12 @@ func CreateBatchedProof(leftProof MerkleProof, rightProof MerkleProof) BatchedMe
 
 func (b batchedProofData) ValidateSequence(leftSubtree *Node, rightSubtree *Node, root *Node) bool {
 	// Validate the full subtree. This could approach could be optimized a bit
-	if !b.getSubproof(b.leftPath, b.leftLvl, b.leftIdx).
-		ValidateSubtree(leftSubtree, root) {
+	if err := b.getSubproof(b.leftPath, b.leftLvl, b.leftIdx).
+		ValidateSubtree(leftSubtree, root); err != nil {
 		return false
 	}
-	if !b.getSubproof(b.rightPath, b.rightLvl, b.rightIdx).
-		ValidateSubtree(rightSubtree, root) {
+	if err := b.getSubproof(b.rightPath, b.rightLvl, b.rightIdx).
+		ValidateSubtree(rightSubtree, root); err != nil {
 		return false
 	}
 	return true

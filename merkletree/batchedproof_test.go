@@ -15,8 +15,8 @@ func TestGettersSunshine(t *testing.T) {
 	assert.Nil(t, errRight)
 	proof := CreateBatchedProof(left, right)
 	assert.True(t, proof.ValidateSequence(&tree.nodes[2][2], &tree.nodes[1][1], tree.Root()))
-	assert.True(t, proof.LeftProof().ValidateSubtree(&tree.nodes[2][2], tree.Root()))
-	assert.True(t, proof.RightProof().ValidateSubtree(&tree.nodes[1][1], tree.Root()))
+	assert.NoError(t, proof.LeftProof().ValidateSubtree(&tree.nodes[2][2], tree.Root()))
+	assert.NoError(t, proof.RightProof().ValidateSubtree(&tree.nodes[1][1], tree.Root()))
 }
 
 func TestGettersEmptyProof(t *testing.T) {
@@ -33,22 +33,22 @@ func TestValidateSequence(t *testing.T) {
 		// Construct a proof of a sequence of hashed leafs
 		// Small amount
 		proof, err := tree.ConstructBatchedProof(tree.Depth()-1, 3, tree.Depth()-1, 4)
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 		assert.True(t, proof.ValidateSequence(TruncatedHash(getLeaf(t, 3)), TruncatedHash(getLeaf(t, 4)), tree.Root()))
 
 		// Large amount
 		proof, err = tree.ConstructBatchedProof(tree.Depth()-1, 10, tree.Depth()-2, amount/3)
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 		assert.True(t, proof.ValidateSequence(TruncatedHash(getLeaf(t, 10)), &tree.nodes[tree.Depth()-2][amount/3], tree.Root()))
 
 		// Right-most subtree
 		proof, err = tree.ConstructBatchedProof(tree.Depth()-3, 0, tree.Depth()-1, amount-1)
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 		assert.True(t, proof.ValidateSequence(&tree.nodes[tree.Depth()-3][0], TruncatedHash(getLeaf(t, amount-1)), tree.Root()))
 
 		// Subtree
 		proof, err = tree.ConstructBatchedProof(tree.Depth()-3, 5, tree.Depth()-2, 1)
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 		assert.True(t, proof.ValidateSequence(&tree.nodes[tree.Depth()-3][5], &tree.nodes[tree.Depth()-2][1], tree.Root()))
 	}
 }
@@ -60,7 +60,7 @@ func TestNegativeValidateSequence(t *testing.T) {
 		tree := getTree(t, amount)
 		// Construct a proof of a leaf node
 		proof, err := tree.ConstructBatchedProof(tree.Depth()-2, 9, tree.Depth()-2, 31)
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 		for currentLvl := 0; currentLvl < 3; currentLvl++ {
 			for i := 0; i < digestBytes; i++ {
 				// Corrupt a bit in a node
@@ -85,16 +85,16 @@ func TestValidateLeafSequence(t *testing.T) {
 	for _, amount := range testAmounts {
 		tree := getTree(t, amount)
 		proof, err := tree.ConstructBatchedProof(tree.Depth()-1, 5, tree.Depth()-1, 10)
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 		assert.True(t, proof.ValidateLeafs(getLeafs(t, 5, 10-5+1), 5, tree))
 
 		proof, err = tree.ConstructBatchedProof(tree.Depth()-1, 15, tree.Depth()-1, amount/3+2)
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 		assert.True(t, proof.ValidateLeafs(getLeafs(t, 15, amount/3+2-15+1), 15, tree))
 
 		// Check the whole tree
 		proof, err = tree.ConstructBatchedProof(tree.Depth()-1, 0, tree.Depth()-1, amount-1)
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 		assert.True(t, proof.ValidateLeafs(getLeafs(t, 0, amount), 0, tree))
 	}
 }
@@ -106,7 +106,7 @@ func TestNegativeValidateLeafs(t *testing.T) {
 		tree := getTree(t, amount)
 		// Construct a proof of a leaf node
 		proof, err := tree.ConstructBatchedProof(tree.Depth()-1, 16, tree.Depth()-1, 22)
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 		for currentLvl := 0; currentLvl < 3; currentLvl++ {
 			for i := 0; i < digestBytes; i++ {
 				// Corrupt a bit in a node
@@ -129,7 +129,7 @@ func TestNegativeValidateLeafs(t *testing.T) {
 func TestNegativeErrorInLeaf(t *testing.T) {
 	tree := getTree(t, 234)
 	proof, err := tree.ConstructBatchedProof(tree.Depth()-1, 53, tree.Depth()-1, 56)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.True(t, proof.ValidateLeafs(getLeafs(t, 53, 56-53+1), 53, tree))
 	// Modify a leaf
 	tree.nodes[tree.Depth()-1][56].Data[0] ^= 0b00100000

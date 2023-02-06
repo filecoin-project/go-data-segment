@@ -3,8 +3,6 @@ package merkletree
 import (
 	"bytes"
 	"encoding/binary"
-	"errors"
-	"fmt"
 	"log"
 	"math"
 
@@ -25,9 +23,9 @@ type MerkleProof interface {
 	// The left-most node in a given level is 0
 	Index() uint64
 	// ValidateLeaf ensures the correctness of the proof of a leaf against the root of a Merkle tree
-	ValidateLeaf(leafs []byte, root *Node) bool
+	ValidateLeaf(leafs []byte, root *Node) error
 	// ValidateSubtree ensures the correctness of the proof of a subtree against the root of a Merkle tree
-	ValidateSubtree(subtree *Node, root *Node) bool
+	ValidateSubtree(subtree *Node, root *Node) error
 }
 
 type proofData struct {
@@ -49,10 +47,9 @@ func DeserializeProof(proof []byte) (MerkleProof, error) {
 	}
 	nodes := (len(proof) - 2*BytesInInt) / fr32.BytesNeeded
 	if (len(proof)-2*BytesInInt)%fr32.BytesNeeded != 0 {
-		return nil, errors.New("proof not properly encoded")
+		return nil, xerrors.New("proof not properly encoded")
 	}
 	lvl := binary.LittleEndian.Uint64(proof[:BytesInInt])
-	fmt.Println("level", lvl)
 	if lvl > math.MaxInt32 {
 		return nil, xerrors.Errorf("lvl greater than max value")
 	}
@@ -70,8 +67,8 @@ func DeserializeProof(proof []byte) (MerkleProof, error) {
 		lvl:  int(lvl),
 		idx:  idx,
 	}
-	if !res.validateProofStructure() {
-		return nil, xerrors.New("the data does not contain a valid proof")
+	if err := res.validateProofStructure(); err != nil {
+		return nil, xerrors.Errorf("the data does not contain a valid proof: %w", err)
 	}
 	return res, nil
 }
@@ -121,21 +118,21 @@ func (d proofData) Index() uint64 {
 }
 
 // ValidateLeaf validates that the data given as input is contained in a Merkle tree with a specific root
-func (d proofData) ValidateLeaf(data []byte, root *Node) bool {
+func (d proofData) ValidateLeaf(data []byte, root *Node) error {
 	leaf := TruncatedHash(data)
 	return d.ValidateSubtree(leaf, root)
 }
 
 // ValidateSubtree validates that a subtree is contained in the in a Merkle tree with a given root
-func (d proofData) ValidateSubtree(subtree *Node, root *Node) bool {
+func (d proofData) ValidateSubtree(subtree *Node, root *Node) error {
 	// Validate the structure first to avoid panics
-	if !d.validateProofStructure() {
-		return false
+	if err := d.validateProofStructure(); err != nil {
+		return xerrors.Errorf("in ValidateSubtree: %w", err)
 	}
 	return d.validateProof(subtree, root)
 }
 
-func (d proofData) validateProof(subtree *Node, root *Node) bool {
+func (d proofData) validateProof(subtree *Node, root *Node) error {
 	currentNode := subtree
 	currentIdx := d.idx
 	var parent *Node
@@ -152,21 +149,18 @@ func (d proofData) validateProof(subtree *Node, root *Node) bool {
 		currentIdx = currentIdx / 2
 	}
 	// Validate the root against the tree
-	return parent.Data == root.Data
+	if parent.Data != root.Data {
+		return xerrors.Errorf("inclusion proof does not lead to the same root")
+	}
+	return nil
 }
 
-func (d proofData) validateProofStructure() bool {
+func (d proofData) validateProofStructure() error {
 	if d.Level() <= 0 {
-		log.Printf("level must be positive, it is %d\n", d.Level())
-		return false
-	}
-	if d.Index() < 0 {
-		log.Printf("index cannot be negative, it is %d\n", d.Level())
-		return false
+		return xerrors.Errorf("level must be positive: %d <= 0", d.Level())
 	}
 	if d.Level() > len(d.Path()) {
-		log.Printf("level %d is greater than the length of the path in the proof: %d\n", d.Level(), len(d.Path()))
-		return false
+		return xerrors.Errorf("level %d is greater than the length of the path in the proof: %d\n", d.Level(), len(d.Path()))
 	}
-	return true
+	return nil
 }
