@@ -101,7 +101,7 @@ func DeserializeInclusion(encoded []byte) (Inclusion, error) {
 		return Inclusion{}, errors.New("no data segment inclusion encoded")
 	}
 	inclusion := Inclusion{
-		CommDA:       fr32.Fr32{Data: *commDA},
+		CommDA:       *(*fr32.Fr32)(commDA),
 		Size:         size,
 		ProofSubtree: subtreeProof,
 		ProofDs:      proofDs,
@@ -166,7 +166,7 @@ func Validate(commDs *fr32.Fr32, sizeDs uint64, commDA *fr32.Fr32, sizeDA uint64
 	// Compute how far to the leaf level in the inc tree we must go to find the first segment, being covered by proofSubtree
 	// The amount of levels in the inclusion tree is proofDs.Level() + 1 thus the amount of doubling of proofSubtree.Index()
 	// that is needed to get to the first leaf position is (proofDs.Level() + 1) - proofSubtree.Level()
-	leafIdx := uint64(proofSubtree.Index()) << ((proofDs.Level() + 1) - proofSubtree.Level())
+	leafIdx := uint64(proofSubtree.Index()) << ((proofDs.Depth() + 1) - proofSubtree.Depth())
 	index, err := MakeDataSegmentIdx(commDs, leafIdx, sizeDs)
 	if err != nil {
 		return xerrors.Errorf("making data-segment index entry: %w", err)
@@ -181,7 +181,7 @@ func Validate(commDs *fr32.Fr32, sizeDs uint64, commDA *fr32.Fr32, sizeDA uint64
 // of the data segment.
 // TODO is this actually needed or implicitly assumed that the network checks the merkle tree is correct? Because we need more of the tree to validate this
 func verifySegmentInclusion(sizeDA uint64, sizeDs uint64, proof merkletree.MerkleProof) error {
-	proofLvl := proof.Level()
+	proofLvl := proof.Depth()
 	// TODO validate that the deal containes the whole semgnet
 	// Compute the expected amount of leaf nodes
 	segmentDepth := util.Log2Ceil(uint64(sizeDs))
@@ -193,8 +193,8 @@ func verifySegmentInclusion(sizeDA uint64, sizeDs uint64, proof merkletree.Merkl
 
 // VerifyInclusion validates a commitment, comm, in accordance to a proof to a root of a tree
 func VerifyInclusion(comm *fr32.Fr32, root *fr32.Fr32, proof merkletree.MerkleProof) error {
-	element := merkletree.Node{Data: comm.Data}
-	rootNode := merkletree.Node{Data: root.Data}
+	element := merkletree.Node(*comm)
+	rootNode := merkletree.Node(*root)
 	return proof.ValidateSubtree(&element, &rootNode)
 }
 
@@ -214,7 +214,7 @@ func VerifySegDescInclusion(segDesc *SegmentDescIdx, commDA *fr32.Fr32, sizeDA u
 		return xerrors.Errorf("could not serialise segment desciptior: %w", err)
 	}
 	toHash := buf.Bytes()
-	comm := fr32.Fr32{Data: merkletree.TruncatedHash(toHash).Data}
+	comm := fr32.Fr32(*merkletree.TruncatedHash(toHash))
 	return VerifyInclusion(&comm, commDA, proofDs)
 }
 
@@ -279,8 +279,8 @@ func computeIncTreeLeafs(segments int, sizeDA uint64) uint64 {
 func validateIndexTreePos(sizeDA uint64, proofDs merkletree.MerkleProof) error {
 	// Validate the level in the index tree
 	// Check that the proof of the commitment is one level above the leafs, when levels are 0-indexed
-	if proofDs.Level() != 1+util.Log2Ceil(sizeDA)-2 {
-		return xerrors.Errorf("data segment inclusion proof leads to wrong level: %d != %d", proofDs.Level(), 1+util.Log2Ceil(sizeDA)-1)
+	if proofDs.Depth() != 1+util.Log2Ceil(sizeDA)-2 {
+		return xerrors.Errorf("data segment inclusion proof leads to wrong level: %d != %d", proofDs.Depth(), 1+util.Log2Ceil(sizeDA)-1)
 	}
 	return nil
 }

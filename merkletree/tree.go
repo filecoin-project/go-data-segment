@@ -56,9 +56,7 @@ type TreeData struct {
 
 var _ MerkleTree = TreeData{}
 
-type Node struct {
-	Data [digestBytes]byte
-}
+type Node [digestBytes]byte
 
 // newBareTree allocates that memory needed to construct a tree with a specific amount of leafs.
 // The construction rounds the amount of leafs up to the nearest two-power with zeroed nodes to ensure
@@ -93,8 +91,7 @@ func DeserializeTree(tree []byte) (*TreeData, error) {
 		}
 		currentLvl := make([]Node, lvlSize)
 		for j := uint64(0); j < lvlSize; j++ {
-			nodeBytes := (*[fr32.BytesNeeded]byte)(tree[ctr : ctr+fr32.BytesNeeded])
-			currentLvl[j] = Node{Data: *nodeBytes}
+			currentLvl[j] = *(*Node)(tree[ctr : ctr+fr32.BytesNeeded])
 			ctr += fr32.BytesNeeded
 		}
 		decoded.nodes[i] = currentLvl
@@ -140,10 +137,7 @@ func GrowTreeHashedLeafs(leafs []Node) *TreeData {
 func padLeafs(leafs []Node) []Node {
 	paddingAmount := (1 << util.Log2Ceil(uint64(len(leafs)))) - len(leafs)
 	paddingLeafs := make([]Node, paddingAmount)
-	for i := 0; i < paddingAmount; i++ {
-		// None existing leafs gets defined to be 32 0-bytes
-		paddingLeafs[i] = Node{Data: [32]byte{}}
-	}
+	// arrays are zeroed by default in Go
 	return append(leafs, paddingLeafs...)
 }
 
@@ -195,11 +189,9 @@ func (d TreeData) Validate() bool {
 // The root is in level 0 and the left-most node in a given level is indexed 0.
 func (d TreeData) ConstructProof(lvl int, idx uint64) (MerkleProof, error) {
 	if lvl < 1 || lvl >= d.Depth() {
-		log.Printf("level is either below 1 or bigger than the tree supports\n")
 		return nil, fmt.Errorf("level is either below 1 or bigger than the tree supports")
 	}
 	if idx < 0 {
-		log.Printf("the requested index %d is negative\n", idx)
 		return nil, fmt.Errorf("the requested index %d is negative", idx)
 	}
 	// The proof consists of appropriate siblings up to and including layer 1
@@ -209,7 +201,6 @@ func (d TreeData) ConstructProof(lvl int, idx uint64) (MerkleProof, error) {
 	for currentLvl := lvl; currentLvl >= 1; currentLvl-- {
 		// For error handling check that no index impossibly large is requested
 		if uint64(len(d.nodes[currentLvl])) <= currentIdx {
-			log.Printf("the requested index %d on level %d does not exist in the tree\n", currentIdx, currentLvl)
 			return nil, fmt.Errorf("the requested index %d on level %d does not exist in the tree", currentIdx, currentLvl)
 		}
 		// Only try to store the sibling node when it exists,
@@ -220,7 +211,7 @@ func (d TreeData) ConstructProof(lvl int, idx uint64) (MerkleProof, error) {
 		// Set next index to be the parent
 		currentIdx = currentIdx / 2
 	}
-	return proofData{path: proof, lvl: lvl, idx: idx}, nil
+	return proofData{path: proof, index: idx}, nil
 }
 
 // ConstructBatchedProof constructs a proof that a sequence of leafs are contained in the tree. Either through a subtree or a (hashed) leaf.
@@ -283,10 +274,17 @@ func getSiblingIdx(idx uint64) uint64 {
 
 // computeNode computes a new internal node in a tree, from its left and right children
 func computeNode(left *Node, right *Node) *Node {
-	toHash := make([]byte, 2*digestBytes)
-	copy(toHash, (*left).Data[:])
-	copy(toHash[digestBytes:], (*right).Data[:])
-	return TruncatedHash(toHash)
+	sha := sha256.New()
+	sha.Write(left[:])
+	sha.Write(right[:])
+	digest := sha.Sum(nil)
+
+	return truncate((*Node)(digest))
+}
+
+func truncate(n *Node) *Node {
+	n[256/8-1] &= 0b00111111
+	return n
 }
 
 func hashList(input [][]byte) []Node {
@@ -299,7 +297,6 @@ func hashList(input [][]byte) []Node {
 
 func TruncatedHash(data []byte) *Node {
 	digest := sha256.Sum256(data)
-	digest[(256/8)-1] &= 0b00111111
-	node := Node{digest}
-	return &node
+	node := Node(digest)
+	return truncate(&node)
 }

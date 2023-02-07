@@ -2,6 +2,7 @@ package parsing
 
 import (
 	"errors"
+
 	"github.com/filecoin-project/go-data-segment/fr32"
 	"github.com/filecoin-project/go-data-segment/util"
 )
@@ -17,7 +18,7 @@ func Pad(unpaddedData []byte) ([]fr32.Fr32, error) {
 	bitIdx := 0
 	for i := 0; i < chunkCount; i++ {
 		unpaddedChunk := retrieveChunk(bitIdx, unpaddedData)
-		paddedData[i] = fr32.Fr32{Data: shiftChunk(bitIdx, unpaddedChunk)}
+		paddedData[i] = fr32.Fr32(shiftChunk(bitIdx, unpaddedChunk))
 		// Update bitIdx to the byte we need to start at which is 254 in
 		bitIdx += fr32.BitsNeeded
 	}
@@ -66,7 +67,7 @@ func Unpad(paddedData []fr32.Fr32) ([]byte, error) {
 	unpaddedData := make([]byte, bytes)
 	bitIdx := 0
 	for i := 0; i < len(paddedData); i++ {
-		chunk := paddedData[i].Data
+		chunk := paddedData[i]
 		setChunk(unpaddedData, chunk, bitIdx)
 		// Update bitIdx to the byte we need to start at which is 254 in
 		bitIdx += fr32.BitsNeeded

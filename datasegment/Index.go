@@ -32,23 +32,19 @@ type Index interface {
 	NumberEntries() int
 	// IndexSize is the size of the index. Defined to be number of entries * 64 bytes
 	IndexSize() int
-	// DealSize is the size of the deal
-	DealSize() int
-	// Start is the start of the index, defined to be (DealSize - IndexSize) & 0xc0ffffff_ffffffff (in little endian, so the two most significant bits must be 0)
+
 	Start() int
 	// SegmentDesc returns the SegmentDescIdx in position of index. 0-indexed
 	SegmentDesc(index int) *SegmentDescIdx
 }
 
 type IndexData struct {
-	dealSize uint64
-	entries  []*SegmentDescIdx
+	entries []*SegmentDescIdx
 }
 
-func MakeIndex(entries []*SegmentDescIdx, dealSize uint64) (*IndexData, error) {
+func MakeIndex(entries []*SegmentDescIdx) (*IndexData, error) {
 	index := IndexData{
-		dealSize: dealSize,
-		entries:  entries,
+		entries: entries,
 	}
 	if err := validateIndexStructure(&index); err != nil {
 		return nil, xerrors.Errorf("input data is invalid: %w", err)
@@ -63,17 +59,7 @@ func (i IndexData) NumberEntries() int {
 
 // IndexSize returns the size of the index. Defined to be number of entries * 64 bytes
 func (i IndexData) IndexSize() uint64 {
-	return uint64(i.NumberEntries()) * 64
-}
-
-// DealSize returns the size of deal
-func (i IndexData) DealSize() uint64 {
-	return i.dealSize
-}
-
-// Start returns the start of the index, defined to be (size of deal - Size) & 0xc0ffffff_ffffffff (in little endian, so the two most significant bits must be 0)
-func (i IndexData) Start() uint64 {
-	return (uint64(i.DealSize()) - uint64(i.IndexSize())) & 0xc0ffffff_ffffffff
+	return uint64(i.NumberEntries()) * uint64(EntrySize)
 }
 
 // SegmentDesc returns the SegmentDescIdx in position of index. 0-indexed
@@ -101,8 +87,8 @@ func (ds SegmentDescIdx) MakeNode() (merkletree.Node, merkletree.Node, error) {
 		log.Println("could not serialize node")
 		return merkletree.Node{}, merkletree.Node{}, err
 	}
-	node1 := merkletree.Node{Data: *(*[fr32.BytesNeeded]byte)(data[:fr32.BytesNeeded])}
-	node2 := merkletree.Node{Data: *(*[fr32.BytesNeeded]byte)(data[fr32.BytesNeeded:])}
+	node1 := *(*merkletree.Node)(data[:fr32.BytesNeeded])
+	node2 := *(*merkletree.Node)(data[fr32.BytesNeeded:])
 	return node1, node2, nil
 }
 func MakeDataSegmentIdxWithChecksum(commDs *fr32.Fr32, offset uint64, size uint64, checksum *[BytesInChecksum]byte) (*SegmentDescIdx, error) {
@@ -134,7 +120,8 @@ func MakeSegDescs(segments []merkletree.Node, segmentSizes []uint64) ([]merkletr
 	res := make([]merkletree.Node, 2*len(segments))
 	curOffset := uint64(0)
 	for i, segment := range segments {
-		currentDesc, err := MakeDataSegmentIdx(&fr32.Fr32{Data: segment.Data}, curOffset, segmentSizes[i])
+		s := fr32.Fr32(segment)
+		currentDesc, err := MakeDataSegmentIdx(&s, curOffset, segmentSizes[i])
 		if err != nil {
 			return nil, err
 		}
@@ -162,7 +149,7 @@ func SegmentRoot(treeDepth int, segmentSize uint64, segmentOffset uint64) (int, 
 
 // serializeFr32Entry uses a buffer to serialize en SegmentDescIdx into a byte slice
 func serializeFr32Entry(buf *bytes.Buffer, entry *SegmentDescIdx) error {
-	err := binary.Write(buf, binary.LittleEndian, entry.CommDs.Data)
+	err := binary.Write(buf, binary.LittleEndian, entry.CommDs)
 	if err != nil {
 		return xerrors.Errorf("writing CommD: %w", err)
 	}
@@ -222,7 +209,7 @@ func deserializeFr32Entry(encoded []byte) (*SegmentDescIdx, error) {
 	checksum := *(*[BytesInChecksum]byte)(encoded[ctr : ctr+BytesInChecksum])
 	ctr += BytesInChecksum
 	en := SegmentDescIdx{
-		CommDs:   fr32.Fr32{Data: *commDs},
+		CommDs:   *(*fr32.Fr32)(commDs),
 		Offset:   offset,
 		Size:     size,
 		Checksum: checksum,
@@ -232,12 +219,12 @@ func deserializeFr32Entry(encoded []byte) (*SegmentDescIdx, error) {
 
 // DeserializeIndex decodes a byte array into a data segment Index and validates the structure
 // Assumes the index is FR32 padded
-func DeserializeIndex(dealSize uint64, encoded []byte) (*IndexData, error) {
+func DeserializeIndex(encoded []byte) (*IndexData, error) {
 	// Check that at least one SegmentDescIdx is included
 	if len(encoded) > 0 && len(encoded)%EntrySize != 0 {
 		return nil, errors.New("no legal data segment index encoding")
 	}
-	index, err := deserializeIndex(dealSize, encoded)
+	index, err := deserializeIndex(encoded)
 	if err != nil {
 		return nil, xerrors.Errorf("deserialising index: %w", err)
 	}
@@ -250,7 +237,7 @@ func DeserializeIndex(dealSize uint64, encoded []byte) (*IndexData, error) {
 
 // deserializeIndex decodes a byte array into a data segment Index, without any validation
 // Assumes the index is FR32 padded
-func deserializeIndex(dealSize uint64, encoded []byte) (*IndexData, error) {
+func deserializeIndex(encoded []byte) (*IndexData, error) {
 	entries := len(encoded) / EntrySize
 	decoded := make([]*SegmentDescIdx, entries)
 	ctr := 0
@@ -263,7 +250,7 @@ func deserializeIndex(dealSize uint64, encoded []byte) (*IndexData, error) {
 
 		ctr += EntrySize
 	}
-	return &IndexData{dealSize: dealSize, entries: decoded}, nil
+	return &IndexData{entries: decoded}, nil
 }
 
 func validateIndexStructure(index *IndexData) error {

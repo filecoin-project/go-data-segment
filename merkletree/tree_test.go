@@ -33,9 +33,9 @@ func TestGrowTreeSunshine(t *testing.T) {
 	assert.Equal(t, 2, len(tree.nodes))
 	assert.Equal(t, 1, len(tree.nodes[0]))
 	assert.Equal(t, 2, len(tree.nodes[1]))
-	assert.Equal(t, expectedLeaf, tree.nodes[1][0].Data[:])
-	assert.Equal(t, expectedLeaf, tree.nodes[1][1].Data[:])
-	assert.Equal(t, expectedRoot, (*tree.Root()).Data[:])
+	assert.Equal(t, expectedLeaf, tree.nodes[1][0][:])
+	assert.Equal(t, expectedLeaf, tree.nodes[1][1][:])
+	assert.Equal(t, expectedRoot, (*tree.Root())[:])
 }
 
 func TestGrowTreeOdd(t *testing.T) {
@@ -61,12 +61,12 @@ func TestGrowTreeOdd(t *testing.T) {
 	assert.Equal(t, 1, len(tree.nodes[0]))
 	assert.Equal(t, 2, len(tree.nodes[1]))
 	assert.Equal(t, 4, len(tree.nodes[2]))
-	assert.Equal(t, expectedLeaf, tree.nodes[2][0].Data[:])
-	assert.Equal(t, expectedLeaf, tree.nodes[2][1].Data[:])
-	assert.Equal(t, expectedLeaf, tree.nodes[2][2].Data[:])
-	assert.Equal(t, expectedLeftMiddleNode, tree.nodes[1][0].Data[:])
-	assert.Equal(t, expectedRightMiddleNode, tree.nodes[1][1].Data[:])
-	assert.Equal(t, expectedRoot, (*tree.Root()).Data[:])
+	assert.Equal(t, expectedLeaf, tree.nodes[2][0][:])
+	assert.Equal(t, expectedLeaf, tree.nodes[2][1][:])
+	assert.Equal(t, expectedLeaf, tree.nodes[2][2][:])
+	assert.Equal(t, expectedLeftMiddleNode, tree.nodes[1][0][:])
+	assert.Equal(t, expectedRightMiddleNode, tree.nodes[1][1][:])
+	assert.Equal(t, expectedRoot, (*tree.Root())[:])
 }
 
 func TestGrowTreeSoak(t *testing.T) {
@@ -102,7 +102,7 @@ func TestConstructProof(t *testing.T) {
 	proof, err := tree.ConstructProof(tree.Depth()-1, 55)
 	assert.NoError(t, err)
 
-	assert.Equal(t, proof.Level(), util.Log2Ceil(uint64(tree.LeafCount())))
+	assert.Equal(t, proof.Depth(), util.Log2Ceil(uint64(tree.LeafCount())))
 	assert.Equal(t, proof.Index(), uint64(55))
 	assert.Equal(t, len(proof.Path()), tree.Depth()-1)
 }
@@ -130,7 +130,7 @@ func TestNegativeValidate(t *testing.T) {
 		tree := getTree(t, amount)
 
 		// Corrupt a bit in a node
-		tree.nodes[3][3].Data[3] ^= 0b10000000
+		tree.nodes[3][3][3] ^= 0b10000000
 		assert.False(t, tree.Validate())
 	}
 }
@@ -195,7 +195,7 @@ func TestTruncatedHash(t *testing.T) {
 	expected := [256 / 8]byte{0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14, 0x9a, 0xfb, 0xf4, 0xc8, 0x99, 0x6f, 0xb9, 0x24, 0x27, 0xae, 0x41, 0xe4, 0x64, 0x9b, 0x93, 0x4c, 0xa4, 0x95, 0x99, 0x1b, 0x78, 0x52, 0xb8, 0x55}
 	expected[256/8-1] &= 0b00111111
 
-	assert.Equal(t, expected, node.Data)
+	assert.Equal(t, expected[:], node[:])
 }
 
 func TestComputeNode(t *testing.T) {
@@ -207,20 +207,20 @@ func TestComputeNode(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NoError(t, err)
 
-	assert.Equal(t, expected, result.Data[:])
+	assert.Equal(t, expected, result[:])
 }
 
 func TestComputeNodeFullInput(t *testing.T) {
 	// Note most significant bit of last byte is NOT set
 	singletonInput, err := hex.DecodeString("038051e9c324393bd1ca1978dd0952c2aa3742ca4f1bd5cd4611cea83892d302")
 	assert.NoError(t, err)
-	nodeInput := Node{Data: *(*[digestBytes]byte)(singletonInput)}
+	nodeInput := *(*Node)(singletonInput)
 	result := computeNode(&nodeInput, &nodeInput)
 
 	// Truncated hash digest of input nodes (which are each truncated to 254 bits)
 	expected, err := hex.DecodeString("90a4a4c485b44abecda2c404e4a56df371c9f7c6f23f396f4c63903acf65d638")
 	assert.NoError(t, err)
-	assert.Equal(t, expected, result.Data[:])
+	assert.Equal(t, expected, result[:])
 }
 
 func TestTruncatedHashTruncation(t *testing.T) {
@@ -232,8 +232,8 @@ func TestTruncatedHashTruncation(t *testing.T) {
 	// Truncated hash digest of input nodes (which are each truncated to 254 bits)
 	expected, err := hex.DecodeString("ab54eaeefe01cd1396247efa4ac59029b4c44c1729f5200f0693645d427db502")
 	assert.NoError(t, err)
-	assert.Equal(t, expected[digestBytes-1]&0b00111111, truncatedHash.Data[digestBytes-1])
-	assert.Equal(t, expected, truncatedHash.Data[:])
+	assert.Equal(t, expected[digestBytes-1]&0b00111111, truncatedHash[digestBytes-1])
+	assert.Equal(t, expected, truncatedHash[:])
 }
 
 func TestHashList(t *testing.T) {
@@ -248,7 +248,7 @@ func TestHashList(t *testing.T) {
 	assert.NoError(t, err)
 
 	for i := 0; i < len(input); i++ {
-		assert.Equal(t, expected, result[i].Data[:])
+		assert.Equal(t, expected, result[i][:])
 	}
 }
 

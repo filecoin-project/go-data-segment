@@ -7,6 +7,4 @@ type InternalType interface {
 	[]byte | [BytesNeeded]byte
 }
 
-type Fr32 struct {
-	Data [BytesNeeded]byte
-}
+type Fr32 [BytesNeeded]byte

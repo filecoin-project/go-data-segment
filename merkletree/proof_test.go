@@ -1,7 +1,6 @@
 package merkletree
 
 import (
-	"reflect"
 	"testing"
 
 	"github.com/filecoin-project/go-data-segment/util"
@@ -10,19 +9,18 @@ import (
 
 // PUBLIC METHODS
 func TestValidateLeafSunshine(t *testing.T) {
-	testAmounts := []uint64{130, 255, 256, 257, 1000000}
-	for _, amount := range testAmounts {
-		tree := getTree(t, amount)
+	for _, size := range []uint64{130, 255, 256, 257, 1000000} {
+		tree := getTree(t, size)
 		// Construct a proof of a leaf node
 		proof, err := tree.ConstructProof(tree.Depth()-1, 0)
 		assert.NoError(t, err)
 		assert.NoError(t, proof.ValidateLeaf(getLeaf(t, 0), tree.Root()))
-		proof, err = tree.ConstructProof(tree.Depth()-1, amount-1)
+		proof, err = tree.ConstructProof(tree.Depth()-1, size-1)
 		assert.NoError(t, err)
-		assert.NoError(t, proof.ValidateLeaf(getLeaf(t, amount-1), tree.Root()))
-		proof, err = tree.ConstructProof(tree.Depth()-1, amount/2-5)
+		assert.NoError(t, proof.ValidateLeaf(getLeaf(t, size-1), tree.Root()))
+		proof, err = tree.ConstructProof(tree.Depth()-1, size/2-5)
 		assert.NoError(t, err)
-		assert.NoError(t, proof.ValidateLeaf(getLeaf(t, amount/2-5), tree.Root()))
+		assert.NoError(t, proof.ValidateLeaf(getLeaf(t, size/2-5), tree.Root()))
 	}
 }
 
@@ -34,13 +32,13 @@ func TestProofSerialization(t *testing.T) {
 		assert.Nil(t, errProof)
 		assert.NoError(t, proof.ValidateSubtree(&tree.nodes[util.Log2Ceil(uint64(amount))][1], tree.Root()))
 		encoded, errEnc := proof.Serialize()
-		assert.Nil(t, errEnc)
+		assert.NoError(t, errEnc)
 		assert.NotNil(t, encoded)
 		decoded, errDec := DeserializeProof(encoded)
-		assert.Nil(t, errDec)
+		assert.NoError(t, errDec)
 		assert.NotNil(t, decoded)
 		assert.NoError(t, proof.ValidateSubtree(&tree.nodes[util.Log2Ceil(uint64(amount))][1], tree.Root()))
-		assert.True(t, reflect.DeepEqual(proof, decoded))
+		assert.Equal(t, proof, decoded)
 	}
 }
 
@@ -56,10 +54,10 @@ func TestNegativeValidateLeaf(t *testing.T) {
 			for i := 0; i < digestBytes; i++ {
 				// Corrupt a bit in a node
 				// Note that modifying the most significant bits of the last byte will still result in failure even tough those bits should never be set
-				proof.Path()[currentLvl].Data[i] ^= 0b10000000
+				proof.Path()[currentLvl][i] ^= 0b10000000
 				assert.Error(t, proof.ValidateLeaf(getLeaf(t, 4), tree.Root()))
 				// Reset the proof
-				proof.Path()[currentLvl].Data[i] ^= 0b10000000
+				proof.Path()[currentLvl][i] ^= 0b10000000
 			}
 		}
 	}
@@ -98,7 +96,7 @@ func TestNegativeValidateSubtree(t *testing.T) {
 			proof, err := tree.ConstructProof(currentLvl, idx)
 			assert.NoError(t, err)
 			// Corrupt a bit in a node
-			proof.Path()[currentLvl/3].Data[0] ^= 0b10000000
+			proof.Path()[currentLvl/3][0] ^= 0b10000000
 			assert.Error(t, proof.ValidateSubtree(&tree.nodes[currentLvl][idx], tree.Root()))
 		}
 	}
@@ -119,33 +117,5 @@ func TestNegativeSerializationProofWrongSize(t *testing.T) {
 	assert.NoError(t, err)
 	// Incorrect size of proof
 	_, errDec := DeserializeProof(encoded[:2*BytesInInt+1])
-	assert.Error(t, errDec)
-}
-
-func TestNegativeSerializationProofZeroLevel(t *testing.T) {
-	tree := getTree(t, 345)
-	proof, err := tree.ConstructProof(5, 12)
-	assert.NoError(t, err)
-	encoded, err := proof.Serialize()
-	assert.NoError(t, err)
-	// Set level to 0
-	for i := 0; i < BytesInInt; i++ {
-		encoded[i] = 0b00000000
-	}
-	_, errDec := DeserializeProof(encoded)
-	assert.Error(t, errDec)
-}
-
-func TestNegativeSerializationProofNegativeIndex(t *testing.T) {
-	tree := getTree(t, 345)
-	proof, err := tree.ConstructProof(5, 12)
-	assert.NoError(t, err)
-	encoded, err := proof.Serialize()
-	assert.NoError(t, err)
-	// Set level to MaxUint
-	for i := 0; i < 2*BytesInInt; i++ {
-		encoded[i] = 0xFF
-	}
-	_, errDec := DeserializeProof(encoded)
 	assert.Error(t, errDec)
 }

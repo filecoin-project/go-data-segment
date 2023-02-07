@@ -65,16 +65,16 @@ func TestNegativeValidateSequence(t *testing.T) {
 			for i := 0; i < digestBytes; i++ {
 				// Corrupt a bit in a node
 				// Note that modifying the most significant bits of the last byte will still result in failure even tough those bits should never be set
-				proof.(batchedProofData).leftPath[currentLvl].Data[i] ^= 0b10000000
+				proof.(batchedProofData).leftPath[currentLvl][i] ^= 0b10000000
 				assert.False(t, proof.ValidateSequence(&tree.nodes[tree.Depth()-2][9], &tree.nodes[tree.Depth()-2][31], tree.Root()))
 				// Revert the modification of the left proof and try the right proof
-				proof.(batchedProofData).leftPath[currentLvl].Data[i] ^= 0b10000000
+				proof.(batchedProofData).leftPath[currentLvl][i] ^= 0b10000000
 
 				assert.True(t, proof.ValidateSequence(&tree.nodes[tree.Depth()-2][9], &tree.nodes[tree.Depth()-2][31], tree.Root()))
-				proof.(batchedProofData).rightPath[currentLvl].Data[i] ^= 0b10000000
+				proof.(batchedProofData).rightPath[currentLvl][i] ^= 0b10000000
 				assert.False(t, proof.ValidateSequence(&tree.nodes[tree.Depth()-2][9], &tree.nodes[tree.Depth()-2][31], tree.Root()))
 				// Reset the right proof
-				proof.(batchedProofData).rightPath[currentLvl].Data[i] ^= 0b10000000
+				proof.(batchedProofData).rightPath[currentLvl][i] ^= 0b10000000
 			}
 		}
 	}
@@ -111,16 +111,16 @@ func TestNegativeValidateLeafs(t *testing.T) {
 			for i := 0; i < digestBytes; i++ {
 				// Corrupt a bit in a node
 				// Note that modifying the most significant bits of the last byte will still result in failure even tough those bits should never be set
-				proof.(batchedProofData).leftPath[currentLvl].Data[i] ^= 0b10000000
+				proof.(batchedProofData).leftPath[currentLvl][i] ^= 0b10000000
 				assert.False(t, proof.ValidateLeafs(getLeafs(t, 16, 22-16+1), 16, tree))
 				// Revert the modification of the left proof and try the right proof
-				proof.(batchedProofData).leftPath[currentLvl].Data[i] ^= 0b10000000
+				proof.(batchedProofData).leftPath[currentLvl][i] ^= 0b10000000
 
 				assert.True(t, proof.ValidateLeafs(getLeafs(t, 16, 22-16+1), 16, tree))
-				proof.(batchedProofData).rightPath[currentLvl].Data[i] ^= 0b10000000
+				proof.(batchedProofData).rightPath[currentLvl][i] ^= 0b10000000
 				assert.False(t, proof.ValidateLeafs(getLeafs(t, 16, 22-16+1), 16, tree))
 				// Reset the right proof
-				proof.(batchedProofData).rightPath[currentLvl].Data[i] ^= 0b10000000
+				proof.(batchedProofData).rightPath[currentLvl][i] ^= 0b10000000
 			}
 		}
 	}
@@ -132,7 +132,7 @@ func TestNegativeErrorInLeaf(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, proof.ValidateLeafs(getLeafs(t, 53, 56-53+1), 53, tree))
 	// Modify a leaf
-	tree.nodes[tree.Depth()-1][56].Data[0] ^= 0b00100000
+	tree.nodes[tree.Depth()-1][56][0] ^= 0b00100000
 	assert.False(t, proof.ValidateLeafs(getLeafs(t, 53, 56-53+1), 53, tree))
 }
 

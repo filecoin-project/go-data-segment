@@ -55,8 +55,8 @@ func CreateBatchedProof(leftProof MerkleProof, rightProof MerkleProof) BatchedMe
 	leftPath := leftProof.Path()[ctr:]
 	rightPath := rightProof.Path()[ctr:]
 	commonPath := rightProof.Path()[:ctr]
-	return batchedProofData{leftPath: leftPath, rightPath: rightPath, commonPath: commonPath, leftLvl: leftProof.Level(),
-		leftIdx: leftProof.Index(), rightLvl: rightProof.Level(), rightIdx: rightProof.Index()}
+	return batchedProofData{leftPath: leftPath, rightPath: rightPath, commonPath: commonPath,
+		leftIdx: leftProof.Index(), rightIdx: rightProof.Index()}
 }
 
 func (b batchedProofData) ValidateSequence(leftSubtree *Node, rightSubtree *Node, root *Node) bool {
@@ -77,7 +77,7 @@ func (b batchedProofData) getSubproof(subPath []Node, lvl int, idx uint64) Merkl
 	fullPath := make([]Node, len(b.commonPath)+len(subPath))
 	copy(fullPath, b.commonPath)
 	copy(fullPath[len(b.commonPath):], subPath)
-	return proofData{path: fullPath, lvl: lvl, idx: idx}
+	return proofData{path: fullPath, index: idx}
 }
 
 func (b batchedProofData) ValidateLeafs(leafs [][]byte, startIdx int, tree MerkleTree) bool {

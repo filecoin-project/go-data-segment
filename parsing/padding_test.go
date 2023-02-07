@@ -54,7 +54,7 @@ func TestPadSunshine(t *testing.T) {
 	thirdData[2] = 0b11111111
 	thirdData[3] = 0b11111111
 	thirdData[4] = 0b00111111
-	assert.Equal(t, []fr32.Fr32{{Data: firstData}, {Data: secondData}, {Data: thirdData}}, res)
+	assert.Equal(t, []fr32.Fr32{firstData, secondData,thirdData}, res)
 }
 
 func TestUnpadSunshine(t *testing.T) {
@@ -63,9 +63,9 @@ func TestUnpadSunshine(t *testing.T) {
 	set1s(&data, 0, fr32.BytesNeeded)
 	data[0] = 0b10101010
 	data[fr32.BytesNeeded-1] = 0b00010101
-	copy(paddedData[0].Data[:], data)
-	copy(paddedData[1].Data[:], data)
-	copy(paddedData[2].Data[:], data)
+	copy(paddedData[0][:], data)
+	copy(paddedData[1][:], data)
+	copy(paddedData[2][:], data)
 
 	unpaddedData, err := Unpad(paddedData)
 	assert.Equal(t, nil, err)
