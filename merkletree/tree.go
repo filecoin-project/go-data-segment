@@ -191,9 +191,7 @@ func (d TreeData) ConstructProof(lvl int, idx uint64) (MerkleProof, error) {
 	if lvl < 1 || lvl >= d.Depth() {
 		return nil, fmt.Errorf("level is either below 1 or bigger than the tree supports")
 	}
-	if idx < 0 {
-		return nil, fmt.Errorf("the requested index %d is negative", idx)
-	}
+
 	// The proof consists of appropriate siblings up to and including layer 1
 	proof := make([]Node, lvl)
 	currentIdx := idx
@@ -220,12 +218,7 @@ func (d TreeData) ConstructProof(lvl int, idx uint64) (MerkleProof, error) {
 // The root is in level 0 and the left-most node in a given level is indexed 0.
 func (d TreeData) ConstructBatchedProof(leftLvl int, leftIdx uint64, rightLvl int, rightIdx uint64) (BatchedMerkleProof, error) {
 	if leftLvl < 1 || leftLvl >= d.Depth() || rightLvl < 1 || rightLvl >= d.Depth() {
-		log.Println("a level is either below 1 or bigger than the tree supports")
-		return batchedProofData{}, errors.New("a level is either below 1 or bigger than the tree supports")
-	}
-	if leftIdx < 0 || rightIdx < 0 {
-		log.Println("a requested index is negative")
-		return batchedProofData{}, errors.New("a requested index is negative")
+		return batchedProofData{}, xerrors.New("a level is either below 1 or bigger than the tree supports")
 	}
 	// Construct individual proofs
 	leftProof, err := d.ConstructProof(leftLvl, leftIdx)

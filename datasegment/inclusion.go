@@ -243,17 +243,7 @@ func MakeIndexProof(inclusionTree merkletree.MerkleTree, segmentIdx uint64, inde
 	return inclusionTree.ConstructProof(lvl, idx)
 }
 
-// indexStart computes the leaf where the first data segment index should be placed
-func indexStart(segments int, sizeDA uint64) uint64 {
-	// Compute the amount of total leafs in the tree including the index
-	inclusionCapacity := computeIncTreeLeafs(segments, sizeDA)
-	// Compute the size of the index. 2-power to ensure it is a proper subtree. Each segment requires two leaf nodes in the index
-	indexAlign := uint64(1) << util.Log2Ceil(uint64(2*segments))
-	// Index is places in the rightmost and smallest subtree it requires
-	return inclusionCapacity - indexAlign
-}
-
-// placeIndex returns where the index should start to be written to
+// placeIndex returns where the index should start to be written and its size
 func placeIndex(segments int, dataOnlySize uint64) (start uint64, size uint64) {
 	sizeOfIndex := uint64(1) << util.Log2Ceil(2*uint64(segments))
 	// pad data to the sizeOfIndex such that sizeOfIndex begins at power of two
@@ -261,15 +251,9 @@ func placeIndex(segments int, dataOnlySize uint64) (start uint64, size uint64) {
 	return dataOnlySizePadded, sizeOfIndex
 }
 
+//lint:ignore U1000 WIP
 func indexAreaStart(sizeDA uint64) uint64 {
 	return sizeDA - uint64(MaxIndexEntriesInDeal(sizeDA*BytesInNode))*2
-}
-
-// computeIncTreeLeafs computes the amount of leafs needed in an inclusion tree based on the amount of segments and the amount of 32 byte data elements, sizeDA
-func computeIncTreeLeafs(segments int, sizeDA uint64) uint64 {
-	// Compute the size of subtree we need for the index, which needs 2 nodes per deal
-	indexTreeLeafs := uint64(1) << util.Log2Ceil(uint64(2*segments))
-	return 1 << util.Log2Ceil(sizeDA+indexTreeLeafs)
 }
 
 // validateIndexTreePos validates the position of a data segment index in an index (sub) tree, proofDs
