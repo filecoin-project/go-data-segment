@@ -9,6 +9,9 @@ import (
 	"github.com/filecoin-project/go-data-segment/fr32"
 	"github.com/filecoin-project/go-data-segment/merkletree"
 	"github.com/filecoin-project/go-data-segment/util"
+	commcid "github.com/filecoin-project/go-fil-commcid"
+	"github.com/filecoin-project/go-state-types/abi"
+	"github.com/ipfs/go-cid"
 	"golang.org/x/xerrors"
 )
 
@@ -39,6 +42,84 @@ type Inclusion struct {
 	// ProofDs is a proof that the user's data segment is contained in the index of the aggregator's deal.
 	// I.e. a proof that the data segment index constructed from the root of the user's data segment subtree is contained in the index of the deal tree.
 	ProofDs merkletree.MerkleProof
+}
+
+// InclusionVerifierData is the information required for verification of the proof and is sourced
+// from the client.
+type InclusionVerifierData struct {
+	// Piece Commitment to client's data
+	CommPc cid.Cid
+	// SizePc is size of client's data
+	SizePc abi.PaddedPieceSize
+}
+
+// InclusionAuxData is required for verification of the proof and needs to be cross-checked with the chain state
+type InclusionAuxData struct {
+	DealActive bool
+	// Piece Commitment to aggregator's deal
+	CommPa cid.Cid
+	// SizePa is padded size of aggregator's deal
+	SizePa abi.PaddedPieceSize
+}
+
+// InclusionPoof is produced by the aggregator (or possibly by the SP)
+type InclusionProof struct {
+	// ProofSubtree is proof of inclusion of the client's data segment in the data aggregator's Merkle tree (includes position information)
+	// I.e. a proof that the root node of the subtree containing all the nodes (leafs) of a data segment is contained in CommDA
+	ProofSubtree merkletree.ProofData
+	// ProofDS is a proof that an entry for the user's data is contained in the index of the aggregator's deal.
+	// I.e. a proof that the data segment index constructed from the root of the user's data segment subtree is contained in the index of the deal tree.
+	ProofDS merkletree.ProofData
+}
+
+func (ip InclusionProof) ComputeExpectedAuxData(veriferData InclusionVerifierData) (*InclusionAuxData, error) {
+	// we can do this simpler than the included code
+	commPc, err := commcid.CIDToPieceCommitmentV1(veriferData.CommPc)
+	if err != nil {
+		return nil, xerrors.Errorf("invalid piece commitment: %w", err)
+	}
+	commPcN := (*merkletree.Node)(commPc)
+
+	// Compute the Commitment to aggregator's data and assume it is correct
+	// we will cross validate it against the other proof and then return it for futher validation
+	assumedCommPa, err := ip.ProofSubtree.ComputeRoot(commPcN)
+	if err != nil {
+		return nil, xerrors.Errorf("could not validate the subtree proof: %w", err)
+	}
+
+	// check overflow
+	assumedSizePa := abi.PaddedPieceSize((1 << ip.ProofSubtree.Depth()) * veriferData.SizePc)
+	// check overflow
+	dataOffset := ip.ProofSubtree.Index() * uint64(veriferData.SizePc)
+	// inclusion proof verification checks that log2(index) is no greater than the path length
+
+	_, _, _ = assumedSizePa, assumedCommPa, dataOffset
+
+	en, err := MakeDataSegmentIndexEntry((*fr32.Fr32)(commPcN), dataOffset, uint64(veriferData.SizePc))
+	enNode := merkletree.TruncatedHash(en.SerializeFr32())
+
+	assumedCommPa2, err := ip.ProofDS.ComputeRoot(enNode)
+	if *assumedCommPa2 != *assumedCommPa {
+		return nil, xerrors.Errorf("aggregator's data commiements don't match")
+	}
+
+	const BytesInDataSegmentIndexEntry = 2 * BytesInNode
+	// check overflow
+	assumedSizePa2 := abi.PaddedPieceSize((1 << ip.ProofDS.Depth()) * BytesInDataSegmentIndexEntry)
+	if assumedSizePa2 != assumedSizePa {
+		return nil, xerrors.Errorf("aggregator's data size doesn't match")
+	}
+
+	cidPa, err := commcid.PieceCommitmentV1ToCID(assumedCommPa[:])
+	if err != nil {
+		return nil, xerrors.Errorf("converting raw commiement to CID: %w", err)
+	}
+
+	return &InclusionAuxData{
+		DealActive: true,
+		CommPa:     cidPa,
+		SizePa:     assumedSizePa,
+	}, nil
 }
 
 // SerializeInclusion encodes a data segment Inclusion into a byte array

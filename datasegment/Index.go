@@ -79,6 +79,30 @@ type SegmentDescIdx struct {
 	Checksum [BytesInChecksum]byte
 }
 
+func (sdi SegmentDescIdx) computeChecksum() [BytesInChecksum]byte {
+	sdiCopy := sdi
+	sdiCopy.Checksum = [BytesInChecksum]byte{}
+
+	toHash := sdiCopy.SerializeFr32()
+	digest := sha256.Sum256(toHash)
+	res := digest[:BytesInChecksum]
+	// Reduce the size to 126 bits
+	res[BytesInChecksum-1] &= 0b00111111
+	return *(*[BytesInChecksum]byte)(res)
+}
+
+func (sdi SegmentDescIdx) SerializeFr32() []byte {
+	res := make([]byte, 0, EntrySize)
+	le := binary.LittleEndian
+
+	res = append(res, sdi.CommDs[:]...)
+	res = le.AppendUint64(res, sdi.Offset)
+	res = le.AppendUint64(res, sdi.Size)
+	res = append(res, sdi.Checksum[:]...)
+
+	return res
+}
+
 func (ds SegmentDescIdx) MakeNode() (merkletree.Node, merkletree.Node, error) {
 	buf := new(bytes.Buffer)
 	err := serializeFr32Entry(buf, &ds)
@@ -101,6 +125,17 @@ func MakeDataSegmentIdxWithChecksum(commDs *fr32.Fr32, offset uint64, size uint6
 	if err := validateEntry(&en); err != nil {
 		return nil, xerrors.Errorf("input does not form a valid SegmentDescIdx: %w", err)
 	}
+	return &en, nil
+}
+
+func MakeDataSegmentIndexEntry(CommP *fr32.Fr32, offset uint64, size uint64) (*SegmentDescIdx, error) {
+	en := SegmentDescIdx{
+		CommDs:   *CommP,
+		Offset:   offset,
+		Size:     size,
+		Checksum: [BytesInChecksum]byte{},
+	}
+	en.Checksum = en.computeChecksum()
 	return &en, nil
 }
 

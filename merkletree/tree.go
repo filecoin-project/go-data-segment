@@ -209,7 +209,7 @@ func (d TreeData) ConstructProof(lvl int, idx uint64) (MerkleProof, error) {
 		// Set next index to be the parent
 		currentIdx = currentIdx / 2
 	}
-	return proofData{path: proof, index: idx}, nil
+	return ProofData{path: proof, index: idx}, nil
 }
 
 // ConstructBatchedProof constructs a proof that a sequence of leafs are contained in the tree. Either through a subtree or a (hashed) leaf.
