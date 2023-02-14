@@ -2,6 +2,7 @@ package merkletree
 
 import (
 	"bytes"
+	"crypto/sha256"
 
 	"golang.org/x/xerrors"
 )
@@ -111,6 +112,21 @@ func (d ProofData) ComputeRoot(subtree *Node) (*Node, error) {
 	}
 
 	return &carry, nil
+}
+
+// computeNode computes a new internal node in a tree, from its left and right children
+func computeNode(left *Node, right *Node) *Node {
+	sha := sha256.New()
+	sha.Write(left[:])
+	sha.Write(right[:])
+	digest := sha.Sum(nil)
+
+	return truncate((*Node)(digest))
+}
+
+func truncate(n *Node) *Node {
+	n[256/8-1] &= 0b00111111
+	return n
 }
 
 func (d ProofData) validateProof(subtree *Node, root *Node) error {

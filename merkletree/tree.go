@@ -265,21 +265,6 @@ func getSiblingIdx(idx uint64) uint64 {
 	}
 }
 
-// computeNode computes a new internal node in a tree, from its left and right children
-func computeNode(left *Node, right *Node) *Node {
-	sha := sha256.New()
-	sha.Write(left[:])
-	sha.Write(right[:])
-	digest := sha.Sum(nil)
-
-	return truncate((*Node)(digest))
-}
-
-func truncate(n *Node) *Node {
-	n[256/8-1] &= 0b00111111
-	return n
-}
-
 func hashList(input [][]byte) []Node {
 	digests := make([]Node, len(input))
 	for i := 0; i < len(input); i++ {
