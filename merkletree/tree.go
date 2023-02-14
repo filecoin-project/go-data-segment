@@ -33,7 +33,7 @@ type MerkleTree interface {
 	Node(int, uint64) *Node
 	// ConstructProof constructs a Merkle proof of the subtree (or leaf) at level lvl with index idx.
 	// level 0 is the root and index 0 is the left-most node in a level.
-	ConstructProof(lvl int, idx uint64) (MerkleProof, error)
+	ConstructProof(lvl int, idx uint64) (*ProofData, error)
 	// ConstructBatchedProof constructs a batched Merkle proof of the nodes from and including leftLvl, leftIdx, to and including rightLvl, rightIdx.
 	// That is, if leftLvl, or rightLvl, is not the leaf-level, then the proof is of the entire subtree from leftLvl at leftIdx to rightLvl at rightIdx
 	// Level 0 is the root and index 0 is the left-most node in a level.
@@ -187,7 +187,7 @@ func (d TreeData) Validate() bool {
 
 // ConstructProof constructs a proof that a node at level lvl and index idx within that level, is contained in the tree.
 // The root is in level 0 and the left-most node in a given level is indexed 0.
-func (d TreeData) ConstructProof(lvl int, idx uint64) (MerkleProof, error) {
+func (d TreeData) ConstructProof(lvl int, idx uint64) (*ProofData, error) {
 	if lvl < 1 || lvl >= d.Depth() {
 		return nil, fmt.Errorf("level is either below 1 or bigger than the tree supports")
 	}
@@ -209,7 +209,7 @@ func (d TreeData) ConstructProof(lvl int, idx uint64) (MerkleProof, error) {
 		// Set next index to be the parent
 		currentIdx = currentIdx / 2
 	}
-	return proofData{path: proof, index: idx}, nil
+	return &ProofData{path: proof, index: idx}, nil
 }
 
 // ConstructBatchedProof constructs a proof that a sequence of leafs are contained in the tree. Either through a subtree or a (hashed) leaf.

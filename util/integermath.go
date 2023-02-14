@@ -1,6 +1,9 @@
 package util
 
-import "math/bits"
+import (
+	"errors"
+	"math/bits"
+)
 
 // Max returns the minimum value of inputs x, y
 func Max(x int, y int) int {
@@ -28,13 +31,28 @@ func Ceil(x uint, y uint) int {
 
 // Log2Ceil computes the integer logarithm with ceiling for 64 bit unsigned ints
 func Log2Ceil(value uint64) int {
-	zeros := bits.LeadingZeros64(value)
-	ones := bits.OnesCount64(value)
-	inc := 0
-	// If the number is not a two power, then we need to increment to get the ceiling
-	if ones > 1 {
-		inc = 1
+	if value <= 1 {
+		return 0
 	}
-	// Max ensure the edge case of value = 0 is correctly handled
-	return Max(0, 64-zeros-1+inc)
+	return Log2Floor(value-1) + 1
+}
+
+func Log2Floor(value uint64) int {
+	if value == 0 {
+		return 0
+	}
+	zeros := bits.LeadingZeros64(value)
+	return 64 - zeros - 1
+}
+
+var ErrInputTooLarge = errors.New("input value too large")
+
+func CeilPow2(value uint64) (uint64, error) {
+	if value > 1<<63 {
+		return 0, ErrInputTooLarge
+	}
+	if value == 0 {
+		return 0, nil
+	}
+	return 1 << Log2Ceil(value), nil
 }

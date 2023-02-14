@@ -79,6 +79,30 @@ type SegmentDescIdx struct {
 	Checksum [BytesInChecksum]byte
 }
 
+func (sdi SegmentDescIdx) computeChecksum() [BytesInChecksum]byte {
+	sdiCopy := sdi
+	sdiCopy.Checksum = [BytesInChecksum]byte{}
+
+	toHash := sdiCopy.SerializeFr32()
+	digest := sha256.Sum256(toHash)
+	res := digest[:BytesInChecksum]
+	// Reduce the size to 126 bits
+	res[BytesInChecksum-1] &= 0b00111111
+	return *(*[BytesInChecksum]byte)(res)
+}
+
+func (sdi SegmentDescIdx) SerializeFr32() []byte {
+	res := make([]byte, 0, EntrySize)
+	le := binary.LittleEndian
+
+	res = append(res, sdi.CommDs[:]...)
+	res = le.AppendUint64(res, sdi.Offset)
+	res = le.AppendUint64(res, sdi.Size)
+	res = append(res, sdi.Checksum[:]...)
+
+	return res
+}
+
 func (ds SegmentDescIdx) MakeNode() (merkletree.Node, merkletree.Node, error) {
 	buf := new(bytes.Buffer)
 	err := serializeFr32Entry(buf, &ds)
@@ -104,6 +128,17 @@ func MakeDataSegmentIdxWithChecksum(commDs *fr32.Fr32, offset uint64, size uint6
 	return &en, nil
 }
 
+func MakeDataSegmentIndexEntry(CommP *fr32.Fr32, offset uint64, size uint64) (*SegmentDescIdx, error) {
+	en := SegmentDescIdx{
+		CommDs:   *CommP,
+		Offset:   offset,
+		Size:     size,
+		Checksum: [BytesInChecksum]byte{},
+	}
+	en.Checksum = en.computeChecksum()
+	return &en, nil
+}
+
 func MakeDataSegmentIdx(commDs *fr32.Fr32, offset uint64, size uint64) (*SegmentDescIdx, error) {
 	checksum, err := computeChecksum(commDs, offset, size)
 	if err != nil {
@@ -121,7 +156,9 @@ func MakeSegDescs(segments []merkletree.Node, segmentSizes []uint64) ([]merkletr
 	curOffset := uint64(0)
 	for i, segment := range segments {
 		s := fr32.Fr32(segment)
-		currentDesc, err := MakeDataSegmentIdx(&s, curOffset, segmentSizes[i])
+		// TODO: fix segment desciption to be in bytes
+		// XXX
+		currentDesc, err := MakeDataSegmentIdx(&s, curOffset*BytesInNode, segmentSizes[i]*BytesInNode)
 		if err != nil {
 			return nil, err
 		}
@@ -131,8 +168,7 @@ func MakeSegDescs(segments []merkletree.Node, segmentSizes []uint64) ([]merkletr
 		}
 		res[2*i] = node1
 		res[2*i+1] = node2
-		// TODO currently only rounding to nearest subtree. Thus to be fully robust it must be updated
-		curOffset += segmentSizes[i]
+		curOffset += 1 << util.Log2Ceil(segmentSizes[i])
 	}
 	return res, nil
 }
@@ -281,6 +317,7 @@ func validateEntry(en *SegmentDescIdx) error {
 }
 
 func computeChecksum(commDs *fr32.Fr32, offset uint64, size uint64) (*[BytesInChecksum]byte, error) {
+
 	buf := new(bytes.Buffer)
 	tempEntry := SegmentDescIdx{
 		CommDs:   *commDs,
@@ -288,6 +325,7 @@ func computeChecksum(commDs *fr32.Fr32, offset uint64, size uint64) (*[BytesInCh
 		Size:     size,
 		Checksum: [16]byte{},
 	}
+	checkSum := tempEntry.computeChecksum()
 	err := serializeFr32Entry(buf, &tempEntry)
 	if err != nil {
 		return nil, xerrors.Errorf("serailising entry: %w", err)
@@ -298,6 +336,9 @@ func computeChecksum(commDs *fr32.Fr32, offset uint64, size uint64) (*[BytesInCh
 	res := digest[:BytesInChecksum]
 	// Reduce the size to 126 bits
 	res[BytesInChecksum-1] &= 0b00111111
+	if *(*[BytesInChecksum]byte)(res) != checkSum {
+		panic("wrong checksum")
+	}
 	return (*[BytesInChecksum]byte)(res), nil
 }
 

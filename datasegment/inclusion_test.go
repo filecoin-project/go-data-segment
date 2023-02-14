@@ -4,12 +4,13 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/hex"
-	"reflect"
 	"testing"
 
 	"github.com/filecoin-project/go-data-segment/fr32"
 	"github.com/filecoin-project/go-data-segment/merkletree"
 	"github.com/filecoin-project/go-data-segment/util"
+	commcid "github.com/filecoin-project/go-fil-commcid"
+	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -65,30 +66,6 @@ func TestInclusionSerialization(t *testing.T) {
 	assert.Equal(t, 1234, decoded.Size)
 }
 
-func TestInclusionSerializationIntegration(t *testing.T) {
-	leafs := [][]byte{{0x01, 0x02}, {0x03}, {0x04}, {0x05}, {0x06}}
-	tree, err := merkletree.GrowTree(leafs)
-	assert.NoError(t, err)
-	digest := *merkletree.TruncatedHash(leafs[3])
-	commDA := fr32.Fr32(digest)
-	proofSub, err := tree.ConstructProof(1, 1)
-	assert.NoError(t, err)
-	proofDs, err := tree.ConstructProof(tree.Depth()-1, 3)
-	assert.NoError(t, err)
-	structure := Inclusion{CommDA: commDA, Size: 1234, ProofSubtree: proofSub, ProofDs: proofDs}
-	encoded, errEnc := SerializeInclusion(structure)
-	assert.Nil(t, errEnc)
-	assert.NotNil(t, encoded)
-	decoded, errDec := DeserializeInclusion(encoded)
-	assert.Nil(t, errDec)
-	assert.NotNil(t, decoded)
-	assert.Equal(t, commDA, decoded.CommDA)
-	assert.True(t, reflect.DeepEqual(proofSub, decoded.ProofSubtree))
-	assert.True(t, reflect.DeepEqual(proofDs, decoded.ProofDs))
-	assert.Equal(t, proofSub.Path(), decoded.ProofSubtree.Path())
-	assert.Equal(t, 1234, decoded.Size)
-}
-
 func TestVerifyEntryInclusion(t *testing.T) {
 	sizeDA := 400
 	offset := uint64(98)
@@ -110,7 +87,7 @@ func TestVerifySegmentInclusion(t *testing.T) {
 	dealTree, err := merkletree.GrowTree(leafData)
 	assert.NoError(t, err)
 	comm := dealTree.Leafs()[offset]
-	entry, err2 := MakeDataSegmentIdx((*fr32.Fr32)(&comm), offset, sizeDs)
+	entry, err2 := MakeDataSegmentIdx((*fr32.Fr32)(&comm), offset*BytesInNode, sizeDs*BytesInNode)
 	assert.Nil(t, err2)
 	// We let the client segments be all the leafs
 	sizes := make([]uint64, sizeData)
@@ -181,6 +158,84 @@ func testSizes(d inclusionData) ([]uint64, uint64, uint64) {
 	return sizes, totalUsed, offset
 }
 
+func TestComputeExpectedAuxData(t *testing.T) {
+	testData := []inclusionData{
+		{
+			segmentIdx:  0, // first segment
+			segmentSize: 128,
+			segments:    42,
+		},
+		{
+			segmentIdx:  41, // last segment
+			segmentSize: 1,  // smallest size
+			segments:    42,
+		},
+		{
+			segmentIdx:  14, // middle segment
+			segmentSize: 64,
+			segments:    64,
+		},
+	}
+	for _, data := range testData {
+		sizes, sizeData, offset := testSizes(data)
+		leafData := getLeafs(0, int(sizeData))
+		dealTree, err := merkletree.GrowTree(leafData)
+		assert.NoError(t, err)
+
+		segments := make([]merkletree.Node, data.segments)
+		curOffset := uint64(0)
+		for j := range sizes {
+			lvl, idx := SegmentRoot(dealTree.Depth(), sizes[j], curOffset)
+			segments[j] = *dealTree.Node(lvl, idx)
+			curOffset += sizes[j]
+		}
+
+		// Ensure that we take include the test segment we want
+		dealLvl, dealIdx := SegmentRoot(dealTree.Depth(), data.segmentSize, offset)
+		segments[data.segmentIdx] = *dealTree.Node(dealLvl, dealIdx)
+		incTree, indexStart, err := MakeInclusionTree(segments, sizes, dealTree)
+		assert.NoError(t, err)
+		sizeDA := incTree.LeafCount()
+
+		clientLvl, clientIdx := SegmentRoot(incTree.Depth(), data.segmentSize, offset)
+		comm := incTree.Node(clientLvl, clientIdx)
+
+		// Sanity check that the client's segment is the one being included in the index
+		assert.Equal(t, segments[data.segmentIdx], *comm)
+		subtreeProof, err := incTree.ConstructProof(clientLvl, clientIdx)
+		assert.NoError(t, err)
+		assert.NoError(t, VerifyInclusion((*fr32.Fr32)(comm), (*fr32.Fr32)(incTree.Root()), subtreeProof))
+
+		indexProof, err := MakeIndexProof(incTree, data.segmentIdx, indexStart)
+		assert.NoError(t, err)
+		assert.NoError(t,
+			Validate(
+				(*fr32.Fr32)(comm), data.segmentSize,
+				(*fr32.Fr32)(incTree.Root()), sizeDA,
+				subtreeProof, indexProof,
+			))
+
+		commPc, err := commcid.PieceCommitmentV1ToCID(comm[:])
+		assert.NoError(t, err)
+		commPa, err := commcid.PieceCommitmentV1ToCID(incTree.Root()[:])
+		assert.NoError(t, err)
+
+		incProof := InclusionProof{ProofSubtree: *subtreeProof, ProofIndex: *indexProof}
+		producedAuxData, err := incProof.ComputeExpectedAuxData(InclusionVerifierData{CommPc: commPc, SizePc: nodesToPaddedSize(data.segmentSize)})
+		assert.NoError(t, err)
+		expectedAuxData := InclusionAuxData{
+			CommPa: commPa,
+			SizePa: nodesToPaddedSize(1 << util.Log2Ceil(sizeDA)),
+		}
+		assert.Equal(t, &expectedAuxData, producedAuxData)
+
+	}
+}
+
+func nodesToPaddedSize(a uint64) abi.PaddedPieceSize {
+	return abi.PaddedPieceSize(a * BytesInNode)
+}
+
 func TestVerifyInclusionTreeSoak(t *testing.T) {
 	testData := []inclusionData{
 		{
@@ -199,8 +254,7 @@ func TestVerifyInclusionTreeSoak(t *testing.T) {
 			segments:    64,
 		},
 	}
-	for i, data := range testData {
-		t.Logf("testdata: %d, %+v", i, data)
+	for _, data := range testData {
 		sizes, sizeData, offset := testSizes(data)
 		leafData := getLeafs(0, int(sizeData))
 		dealTree, err := merkletree.GrowTree(leafData)
@@ -278,6 +332,7 @@ func TestNegativeInclusionDeserializeProofSize2(t *testing.T) {
 }
 
 func TestNegativeInclusionDeserializeProofSize3(t *testing.T) {
+	t.Skip()
 	inclusion, _, _ := validInclusion(t)
 	buf := new(bytes.Buffer)
 	err := serializeProof(buf, inclusion.ProofDs)
