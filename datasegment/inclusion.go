@@ -31,7 +31,7 @@ type InclusionProof struct {
 	// ProofSubtree is proof of inclusion of the client's data segment in the data aggregator's Merkle tree (includes position information)
 	// I.e. a proof that the root node of the subtree containing all the nodes (leafs) of a data segment is contained in CommDA
 	ProofSubtree merkletree.ProofData
-	// ProofDS is a proof that an entry for the user's data is contained in the index of the aggregator's deal.
+	// ProofIndex is a proof that an entry for the user's data is contained in the index of the aggregator's deal.
 	// I.e. a proof that the data segment index constructed from the root of the user's data segment subtree is contained in the index of the deal tree.
 	ProofIndex merkletree.ProofData
 }
@@ -42,11 +42,11 @@ func (ip InclusionProof) ComputeExpectedAuxData(veriferData InclusionVerifierDat
 	//	2. Compute assumed aggregator's commitment based on the subtree inclusion proof
 	//	3. Compute size of aggregator's deal and offset of Client's deal within the Aggreggator's deal.
 	//	4. Create the DataSegmentIndexEntry based on Client's data and offset from 3
-	//  5. Check if DataSegmentIndexEntry falls into the correct area. TODO
 	//	5. Compute second assumed aggregator's commitment based on the data segment index entry inclusion proof.
-	//	6. Compute second assumed aggregator's deal size.
-	//	7. Compare deal sizes and commitments from steps 2+3 against steps 5+6. Fail if not equal.
-	//	8. Return the computed values of aggregator's Commitment and Size as AuxData.
+	//  6. TODO: Check if DataSegmentIndexEntry falls into the correct area.
+	//	7. Compute second assumed aggregator's deal size.
+	//	8. Compare deal sizes and commitments from steps 2+3 against steps 5+6. Fail if not equal.
+	//	9. Return the computed values of aggregator's Commitment and Size as AuxData.
 
 	// we can do this simpler than the library code
 	commPc, err := commcid.CIDToPieceCommitmentV1(veriferData.CommPc)
