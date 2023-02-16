@@ -3,9 +3,10 @@ module github.com/filecoin-project/go-data-segment
 go 1.19
 
 require (
+	github.com/filecoin-project/go-commp-utils v0.1.3
 	github.com/filecoin-project/go-fil-commcid v0.1.0
 	github.com/filecoin-project/go-state-types v0.9.9
-	github.com/ipfs/go-cid v0.2.0
+	github.com/ipfs/go-cid v0.3.2
 	github.com/stretchr/testify v1.8.1
 	github.com/whyrusleeping/cbor-gen v0.0.0-20230126041949-52956bd4c9aa
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2

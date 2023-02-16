@@ -3,7 +3,6 @@ package merkletree
 import (
 	"testing"
 
-	"github.com/filecoin-project/go-data-segment/util"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -21,24 +20,6 @@ func TestValidateLeafSunshine(t *testing.T) {
 		proof, err = tree.ConstructProof(tree.Depth()-1, size/2-5)
 		assert.NoError(t, err)
 		assert.NoError(t, proof.ValidateLeaf(getLeaf(t, size/2-5), tree.Root()))
-	}
-}
-
-func TestProofSerialization(t *testing.T) {
-	testAmounts := []uint64{2, 3, 4, 55, 555}
-	for _, amount := range testAmounts {
-		tree := getTree(t, amount)
-		proof, errProof := tree.ConstructProof(util.Log2Ceil(uint64(amount)), 1)
-		assert.Nil(t, errProof)
-		assert.NoError(t, proof.ValidateSubtree(&tree.nodes[util.Log2Ceil(uint64(amount))][1], tree.Root()))
-		encoded, errEnc := proof.Serialize()
-		assert.NoError(t, errEnc)
-		assert.NotNil(t, encoded)
-		decoded, errDec := DeserializeProof(encoded)
-		assert.NoError(t, errDec)
-		assert.NotNil(t, decoded)
-		assert.NoError(t, proof.ValidateSubtree(&tree.nodes[util.Log2Ceil(uint64(amount))][1], tree.Root()))
-		assert.Equal(t, proof, decoded)
 	}
 }
 

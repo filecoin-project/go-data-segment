@@ -30,7 +30,7 @@ type MerkleTree interface {
 	// Leafs returns all the leaf nodes in the tree
 	Leafs() []Node
 	// Node returns the node at given lvl and idx
-	Node(int, uint64) *Node
+	Node(int, uint64) Node
 	// ConstructProof constructs a Merkle proof of the subtree (or leaf) at level lvl with index idx.
 	// level 0 is the root and index 0 is the left-most node in a level.
 	ConstructProof(lvl int, idx uint64) (*ProofData, error)
@@ -57,6 +57,10 @@ type TreeData struct {
 var _ MerkleTree = TreeData{}
 
 type Node [digestBytes]byte
+
+func (n *Node) IsZero() bool {
+	return *n == (Node{})
+}
 
 // newBareTree allocates that memory needed to construct a tree with a specific amount of leafs.
 // The construction rounds the amount of leafs up to the nearest two-power with zeroed nodes to ensure
@@ -163,8 +167,8 @@ func (d TreeData) Leafs() []Node {
 }
 
 // Node returns the node at given lvl and idx
-func (d TreeData) Node(lvl int, idx uint64) *Node {
-	return &d.nodes[lvl][int(idx)]
+func (d TreeData) Node(lvl int, idx uint64) Node {
+	return d.nodes[lvl][int(idx)]
 }
 
 // ValidateFromLeafs validates the structure of this Merkle tree, given the raw data elements the tree was constructed from
