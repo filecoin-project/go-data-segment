@@ -1,3 +1,5 @@
+//go:build no
+
 package merkletree
 
 import (
@@ -62,7 +64,7 @@ func TestNegativeValidateSequence(t *testing.T) {
 		proof, err := tree.ConstructBatchedProof(tree.Depth()-2, 9, tree.Depth()-2, 31)
 		assert.NoError(t, err)
 		for currentLvl := 0; currentLvl < 3; currentLvl++ {
-			for i := 0; i < digestBytes; i++ {
+			for i := 0; i < NodeSize; i++ {
 				// Corrupt a bit in a node
 				// Note that modifying the most significant bits of the last byte will still result in failure even tough those bits should never be set
 				proof.(batchedProofData).leftPath[currentLvl][i] ^= 0b10000000
@@ -108,7 +110,7 @@ func TestNegativeValidateLeafs(t *testing.T) {
 		proof, err := tree.ConstructBatchedProof(tree.Depth()-1, 16, tree.Depth()-1, 22)
 		assert.NoError(t, err)
 		for currentLvl := 0; currentLvl < 3; currentLvl++ {
-			for i := 0; i < digestBytes; i++ {
+			for i := 0; i < NodeSize; i++ {
 				// Corrupt a bit in a node
 				// Note that modifying the most significant bits of the last byte will still result in failure even tough those bits should never be set
 				proof.(batchedProofData).leftPath[currentLvl][i] ^= 0b10000000

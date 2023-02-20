@@ -16,7 +16,7 @@ func ZeroCommitmentForLevel(lvl int) Node {
 }
 
 func ZeroCommitmentForSize(size uint64) (Node, error) {
-	lvl := util.Log2Ceil(size / digestBytes)
+	lvl := util.Log2Ceil(size / NodeSize)
 	if lvl*32 >= len(zeroComms) {
 		return Node{}, xerrors.Errorf("zero commimtents for size %d are not supported", size)
 	}

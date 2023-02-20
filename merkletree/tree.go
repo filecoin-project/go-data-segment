@@ -14,7 +14,7 @@ import (
 	"golang.org/x/xerrors"
 )
 
-const digestBytes = 32
+const NodeSize = 32
 
 // BytesInInt represents the amount of bytes used to encode an int
 const BytesInInt int = 64 / 8
@@ -30,14 +30,10 @@ type MerkleTree interface {
 	// Leafs returns all the leaf nodes in the tree
 	Leafs() []Node
 	// Node returns the node at given lvl and idx
-	Node(int, uint64) Node
+	Node(int, uint64) *Node
 	// ConstructProof constructs a Merkle proof of the subtree (or leaf) at level lvl with index idx.
 	// level 0 is the root and index 0 is the left-most node in a level.
 	ConstructProof(lvl int, idx uint64) (*ProofData, error)
-	// ConstructBatchedProof constructs a batched Merkle proof of the nodes from and including leftLvl, leftIdx, to and including rightLvl, rightIdx.
-	// That is, if leftLvl, or rightLvl, is not the leaf-level, then the proof is of the entire subtree from leftLvl at leftIdx to rightLvl at rightIdx
-	// Level 0 is the root and index 0 is the left-most node in a level.
-	ConstructBatchedProof(leftLvl int, leftIdx uint64, rightLvl int, rightIdx uint64) (BatchedMerkleProof, error)
 	// ValidateFromLeafs checks that the Merkle tree is correctly constructed based on all the leafData
 	ValidateFromLeafs(leafData [][]byte) error
 	// Validate checks that the Merkle tree is correctly constructed, based on the internal nodes
@@ -56,7 +52,7 @@ type TreeData struct {
 
 var _ MerkleTree = TreeData{}
 
-type Node [digestBytes]byte
+type Node [NodeSize]byte
 
 func (n *Node) IsZero() bool {
 	return *n == (Node{})
@@ -167,8 +163,9 @@ func (d TreeData) Leafs() []Node {
 }
 
 // Node returns the node at given lvl and idx
-func (d TreeData) Node(lvl int, idx uint64) Node {
-	return d.nodes[lvl][int(idx)]
+func (d TreeData) Node(lvl int, idx uint64) *Node {
+	res := d.nodes[lvl][int(idx)]
+	return &res
 }
 
 // ValidateFromLeafs validates the structure of this Merkle tree, given the raw data elements the tree was constructed from
@@ -213,27 +210,11 @@ func (d TreeData) ConstructProof(lvl int, idx uint64) (*ProofData, error) {
 		// Set next index to be the parent
 		currentIdx = currentIdx / 2
 	}
-	return &ProofData{path: proof, index: idx}, nil
-}
+	for i, j := 0, len(proof)-1; i < j; i, j = i+1, j-1 {
+		proof[i], proof[j] = proof[j], proof[i]
+	}
 
-// ConstructBatchedProof constructs a proof that a sequence of leafs are contained in the tree. Either through a subtree or a (hashed) leaf.
-// The proof contains everything captured by the node in leftLvl level at index leftIdx up to and INCLUDING everything
-// contained by the node in rightLvl level and rightIdx index.
-// The root is in level 0 and the left-most node in a given level is indexed 0.
-func (d TreeData) ConstructBatchedProof(leftLvl int, leftIdx uint64, rightLvl int, rightIdx uint64) (BatchedMerkleProof, error) {
-	if leftLvl < 1 || leftLvl >= d.Depth() || rightLvl < 1 || rightLvl >= d.Depth() {
-		return batchedProofData{}, xerrors.New("a level is either below 1 or bigger than the tree supports")
-	}
-	// Construct individual proofs
-	leftProof, err := d.ConstructProof(leftLvl, leftIdx)
-	if err != nil {
-		return batchedProofData{}, err
-	}
-	rightProof, err := d.ConstructProof(rightLvl, rightIdx)
-	if err != nil {
-		return batchedProofData{}, err
-	}
-	return CreateBatchedProof(leftProof, rightProof), nil
+	return &ProofData{path: proof, index: idx}, nil
 }
 
 // Serialize serializes the MerkleTree into a byte slice

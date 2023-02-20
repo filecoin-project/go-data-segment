@@ -32,7 +32,7 @@ func TestNegativeValidateLeaf(t *testing.T) {
 		assert.NoError(t, err)
 		assert.NoError(t, proof.ValidateLeaf(getLeaf(t, 4), tree.Root()))
 		for currentLvl := 0; currentLvl < tree.Depth()-1; currentLvl++ {
-			for i := 0; i < digestBytes; i++ {
+			for i := 0; i < NodeSize; i++ {
 				// Corrupt a bit in a node
 				// Note that modifying the most significant bits of the last byte will still result in failure even tough those bits should never be set
 				proof.Path()[currentLvl][i] ^= 0b10000000

@@ -8,6 +8,7 @@ import (
 	"math"
 	"sort"
 
+	abi "github.com/filecoin-project/go-state-types/abi"
 	cid "github.com/ipfs/go-cid"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	xerrors "golang.org/x/xerrors"
@@ -37,7 +38,7 @@ func (t *InclusionProof) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.ProofDS (merkletree.ProofData) (struct)
+	// t.ProofIndex (merkletree.ProofData) (struct)
 	if err := t.ProofIndex.MarshalCBOR(cw); err != nil {
 		return err
 	}
@@ -76,12 +77,12 @@ func (t *InclusionProof) UnmarshalCBOR(r io.Reader) (err error) {
 		}
 
 	}
-	// t.ProofDS (merkletree.ProofData) (struct)
+	// t.ProofIndex (merkletree.ProofData) (struct)
 
 	{
 
 		if err := t.ProofIndex.UnmarshalCBOR(cr); err != nil {
-			return xerrors.Errorf("unmarshaling t.ProofDS: %w", err)
+			return xerrors.Errorf("unmarshaling t.ProofIndex: %w", err)
 		}
 
 	}
@@ -108,7 +109,7 @@ func (t *InclusionAuxData) MarshalCBOR(w io.Writer) error {
 		return xerrors.Errorf("failed to write cid field t.CommPa: %w", err)
 	}
 
-	// t.SizePa (uint64) (uint64)
+	// t.SizePa (abi.PaddedPieceSize) (uint64)
 
 	if err := cw.WriteMajorTypeHeader(cbg.MajUnsignedInt, uint64(t.SizePa)); err != nil {
 		return err
@@ -152,7 +153,7 @@ func (t *InclusionAuxData) UnmarshalCBOR(r io.Reader) (err error) {
 		t.CommPa = c
 
 	}
-	// t.SizePa (uint64) (uint64)
+	// t.SizePa (abi.PaddedPieceSize) (uint64)
 
 	{
 
@@ -163,6 +164,7 @@ func (t *InclusionAuxData) UnmarshalCBOR(r io.Reader) (err error) {
 		if maj != cbg.MajUnsignedInt {
 			return fmt.Errorf("wrong type for uint64 field")
 		}
+		t.SizePa = abi.PaddedPieceSize(extra)
 
 	}
 	return nil
@@ -188,7 +190,7 @@ func (t *InclusionVerifierData) MarshalCBOR(w io.Writer) error {
 		return xerrors.Errorf("failed to write cid field t.CommPc: %w", err)
 	}
 
-	// t.SizePc (uint64) (uint64)
+	// t.SizePc (abi.PaddedPieceSize) (uint64)
 
 	if err := cw.WriteMajorTypeHeader(cbg.MajUnsignedInt, uint64(t.SizePc)); err != nil {
 		return err
@@ -232,7 +234,7 @@ func (t *InclusionVerifierData) UnmarshalCBOR(r io.Reader) (err error) {
 		t.CommPc = c
 
 	}
-	// t.SizePc (uint64) (uint64)
+	// t.SizePc (abi.PaddedPieceSize) (uint64)
 
 	{
 
@@ -243,6 +245,160 @@ func (t *InclusionVerifierData) UnmarshalCBOR(r io.Reader) (err error) {
 		if maj != cbg.MajUnsignedInt {
 			return fmt.Errorf("wrong type for uint64 field")
 		}
+		t.SizePc = abi.PaddedPieceSize(extra)
+
+	}
+	return nil
+}
+
+var lengthBufDataAggregationProof = []byte{131}
+
+func (t *DataAggregationProof) MarshalCBOR(w io.Writer) error {
+	if t == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+
+	cw := cbg.NewCborWriter(w)
+
+	if _, err := cw.Write(lengthBufDataAggregationProof); err != nil {
+		return err
+	}
+
+	// t.Inclusion (datasegment.InclusionProof) (struct)
+	if err := t.Inclusion.MarshalCBOR(cw); err != nil {
+		return err
+	}
+
+	// t.AuxDataType (uint64) (uint64)
+
+	if err := cw.WriteMajorTypeHeader(cbg.MajUnsignedInt, uint64(t.AuxDataType)); err != nil {
+		return err
+	}
+
+	// t.AuxDataSource (datasegment.SingletonMarketSource) (struct)
+	if err := t.AuxDataSource.MarshalCBOR(cw); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (t *DataAggregationProof) UnmarshalCBOR(r io.Reader) (err error) {
+	*t = DataAggregationProof{}
+
+	cr := cbg.NewCborReader(r)
+
+	maj, extra, err := cr.ReadHeader()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err == io.EOF {
+			err = io.ErrUnexpectedEOF
+		}
+	}()
+
+	if maj != cbg.MajArray {
+		return fmt.Errorf("cbor input should be of type array")
+	}
+
+	if extra != 3 {
+		return fmt.Errorf("cbor input had wrong number of fields")
+	}
+
+	// t.Inclusion (datasegment.InclusionProof) (struct)
+
+	{
+
+		if err := t.Inclusion.UnmarshalCBOR(cr); err != nil {
+			return xerrors.Errorf("unmarshaling t.Inclusion: %w", err)
+		}
+
+	}
+	// t.AuxDataType (uint64) (uint64)
+
+	{
+
+		maj, extra, err = cr.ReadHeader()
+		if err != nil {
+			return err
+		}
+		if maj != cbg.MajUnsignedInt {
+			return fmt.Errorf("wrong type for uint64 field")
+		}
+		t.AuxDataType = uint64(extra)
+
+	}
+	// t.AuxDataSource (datasegment.SingletonMarketSource) (struct)
+
+	{
+
+		if err := t.AuxDataSource.UnmarshalCBOR(cr); err != nil {
+			return xerrors.Errorf("unmarshaling t.AuxDataSource: %w", err)
+		}
+
+	}
+	return nil
+}
+
+var lengthBufSingletonMarketSource = []byte{129}
+
+func (t *SingletonMarketSource) MarshalCBOR(w io.Writer) error {
+	if t == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+
+	cw := cbg.NewCborWriter(w)
+
+	if _, err := cw.Write(lengthBufSingletonMarketSource); err != nil {
+		return err
+	}
+
+	// t.DealID (abi.DealID) (uint64)
+
+	if err := cw.WriteMajorTypeHeader(cbg.MajUnsignedInt, uint64(t.DealID)); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (t *SingletonMarketSource) UnmarshalCBOR(r io.Reader) (err error) {
+	*t = SingletonMarketSource{}
+
+	cr := cbg.NewCborReader(r)
+
+	maj, extra, err := cr.ReadHeader()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err == io.EOF {
+			err = io.ErrUnexpectedEOF
+		}
+	}()
+
+	if maj != cbg.MajArray {
+		return fmt.Errorf("cbor input should be of type array")
+	}
+
+	if extra != 1 {
+		return fmt.Errorf("cbor input had wrong number of fields")
+	}
+
+	// t.DealID (abi.DealID) (uint64)
+
+	{
+
+		maj, extra, err = cr.ReadHeader()
+		if err != nil {
+			return err
+		}
+		if maj != cbg.MajUnsignedInt {
+			return fmt.Errorf("wrong type for uint64 field")
+		}
+		t.DealID = abi.DealID(extra)
 
 	}
 	return nil

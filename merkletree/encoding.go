@@ -8,7 +8,7 @@ import (
 	xerrors "golang.org/x/xerrors"
 )
 
-// ProofData should encode as [uint64, [[path_element1],[path_element2],[path_element3]]
+// ProofData should encode as [uint64, [[path_element1],[path_element2],[path_element3], ...]
 // but cbor-gen refuses to encode constant sized byte arrays, so we have to increase complexity
 
 func (pd *ProofData) MarshalCBOR(w io.Writer) error {
@@ -114,12 +114,12 @@ var _ cbg.CBORMarshaler = (*Node)(nil)
 func (n *Node) UnmarshalCBOR(r io.Reader) error {
 	*n = Node{}
 
-	nb, err := cbg.ReadByteArray(r, digestBytes)
+	nb, err := cbg.ReadByteArray(r, NodeSize)
 
 	if err != nil {
 		return xerrors.Errorf("reading cbor bytearray: %w", err)
 	}
-	if len(nb) != digestBytes {
+	if len(nb) != NodeSize {
 		return xerrors.Errorf("to few bytes for full node: %d", len(n))
 	}
 

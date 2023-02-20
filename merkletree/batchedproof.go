@@ -1,6 +1,11 @@
+//go:build no
+
 package merkletree
 
-import "github.com/filecoin-project/go-data-segment/util"
+import (
+	"github.com/filecoin-project/go-data-segment/util"
+	xerrors "golang.org/x/xerrors"
+)
 
 // BatchedMerkleProof represents a Merkle proof of a sequence of leafs
 type BatchedMerkleProof interface {
@@ -93,4 +98,24 @@ func (b batchedProofData) ValidateLeafs(leafs [][]byte, startIdx int, tree Merkl
 	}
 	// Also check the batched proof from the edges of the leafs
 	return b.ValidateSequence(&hashedLeafs[0], &hashedLeafs[len(hashedLeafs)-1], tree.Root())
+}
+
+// ConstructBatchedProof constructs a proof that a sequence of leafs are contained in the tree. Either through a subtree or a (hashed) leaf.
+// The proof contains everything captured by the node in leftLvl level at index leftIdx up to and INCLUDING everything
+// contained by the node in rightLvl level and rightIdx index.
+// The root is in level 0 and the left-most node in a given level is indexed 0.
+func (d TreeData) ConstructBatchedProof(leftLvl int, leftIdx uint64, rightLvl int, rightIdx uint64) (BatchedMerkleProof, error) {
+	if leftLvl < 1 || leftLvl >= d.Depth() || rightLvl < 1 || rightLvl >= d.Depth() {
+		return batchedProofData{}, xerrors.New("a level is either below 1 or bigger than the tree supports")
+	}
+	// Construct individual proofs
+	leftProof, err := d.ConstructProof(leftLvl, leftIdx)
+	if err != nil {
+		return batchedProofData{}, err
+	}
+	rightProof, err := d.ConstructProof(rightLvl, rightIdx)
+	if err != nil {
+		return batchedProofData{}, err
+	}
+	return CreateBatchedProof(leftProof, rightProof), nil
 }

@@ -7,16 +7,17 @@ import (
 )
 
 func main() {
-	if err := cbg.WriteTupleEncodersToFile("../merkletree/cbor_gen.go", "merkletree",
+	if err := cbg.WriteTupleEncodersToFile("merkletree/cbor_gen.go", "merkletree",
 		merkletree.ProofDataSerialization{},
 	); err != nil {
 		panic(err)
 	}
-	if err := cbg.WriteTupleEncodersToFile("../datasegment/cbor_gen.go", "datasegment",
+	if err := cbg.WriteTupleEncodersToFile("datasegment/cbor_gen.go", "datasegment",
 		datasegment.InclusionProof{},
 		datasegment.InclusionAuxData{},
 		datasegment.InclusionVerifierData{},
 		datasegment.DataAggregationProof{},
+		datasegment.SingletonMarketSource{},
 	); err != nil {
 		panic(err)
 	}

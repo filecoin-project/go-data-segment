@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"log"
 
 	"github.com/filecoin-project/go-data-segment/fr32"
@@ -170,7 +169,6 @@ func Validate(commDs *fr32.Fr32, sizeDs uint64, commDA *fr32.Fr32, sizeDA uint64
 	leafIdx := uint64(proofSubtree.Index()) << ((proofDs.Depth() + 1) - proofSubtree.Depth())
 	// TODO: segment size in bytes
 	index, err := MakeDataSegmentIdx(commDs, leafIdx*BytesInNode, sizeDs*BytesInNode)
-	fmt.Printf("index: %+v\n", index)
 	if err != nil {
 		return xerrors.Errorf("making data-segment index entry: %w", err)
 	}
@@ -207,7 +205,7 @@ func VerifyInclusion(comm *fr32.Fr32, root *fr32.Fr32, proof merkletree.MerklePr
 // sizeDA is the amount of 32 byte notes included in the entire deal
 // segments is the amount of client data segments included in the deal
 // proofDs is the Merkle proof of index inclusion in the inclusion tree to validate
-func VerifySegDescInclusion(segDesc *SegmentDescIdx, commDA *fr32.Fr32, sizeDA uint64, proofDs merkletree.MerkleProof) error {
+func VerifySegDescInclusion(segDesc *SegmentDesc, commDA *fr32.Fr32, sizeDA uint64, proofDs merkletree.MerkleProof) error {
 	if err := validateIndexTreePos(sizeDA, proofDs); err != nil {
 		return xerrors.Errorf("validate index tree position: %w", err)
 	}
@@ -252,11 +250,6 @@ func placeIndex(segments int, dataOnlySize uint64) (start uint64, size uint64) {
 	// pad data to the sizeOfIndex such that sizeOfIndex begins at power of two
 	dataOnlySizePadded := dataOnlySize + (sizeOfIndex - dataOnlySize%sizeOfIndex)
 	return dataOnlySizePadded, sizeOfIndex
-}
-
-//lint:ignore U1000 WIP
-func indexAreaStart(sizeDA uint64) uint64 {
-	return sizeDA - uint64(MaxIndexEntriesInDeal(sizeDA*BytesInNode))*2
 }
 
 // validateIndexTreePos validates the position of a data segment index in an index (sub) tree, proofDs

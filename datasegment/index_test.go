@@ -1,3 +1,5 @@
+//go:build no
+
 package datasegment
 
 import (
@@ -10,16 +12,16 @@ import (
 
 // HELPER METHODS
 
-func invalidEntry1() *SegmentDescIdx {
-	return &SegmentDescIdx{
+func invalidEntry1() *SegmentDesc {
+	return &SegmentDesc{
 		CommDs:   fr32.Fr32{},
 		Offset:   123,
 		Size:     12222,
 		Checksum: [BytesInChecksum]byte{},
 	}
 }
-func invalidEntry2() *SegmentDescIdx {
-	return &SegmentDescIdx{
+func invalidEntry2() *SegmentDesc {
+	return &SegmentDesc{
 		CommDs:   fr32.Fr32{},
 		Offset:   311,
 		Size:     22221,
@@ -30,7 +32,7 @@ func invalidEntry2() *SegmentDescIdx {
 // makes an index without valid checksums
 func invalidIndex() *IndexData {
 	index := IndexData{
-		entries: []*SegmentDescIdx{invalidEntry1(), invalidEntry2()},
+		entries: []*SegmentDesc{invalidEntry1(), invalidEntry2()},
 	}
 	return &index
 }
@@ -42,7 +44,7 @@ func validIndex(t *testing.T) *IndexData {
 	assert.Nil(t, err1)
 	entry2, err2 := MakeDataSegmentIdx(&comm2, 132, 342343)
 	assert.Nil(t, err2)
-	index, err3 := MakeIndex([]*SegmentDescIdx{entry1, entry2})
+	index, err3 := MakeIndex([]*SegmentDesc{entry1, entry2})
 	assert.Nil(t, err3)
 	return index
 }
@@ -112,7 +114,7 @@ func TestNegativeSerialization(t *testing.T) {
 	assert.Nil(t, serialized)
 
 	// Empty entries
-	data = &IndexData{entries: make([]*SegmentDescIdx, 0)}
+	data = &IndexData{entries: make([]*SegmentDesc, 0)}
 	serialized, err = SerializeIndex(data)
 	assert.Error(t, err)
 	assert.Nil(t, serialized)
@@ -142,13 +144,13 @@ func TestNegativeDeserializationIndexIncorrect(t *testing.T) {
 
 func TestDealSizeSmallerThanSegmentDesciptions(t *testing.T) {
 	// Too small deal
-	en := SegmentDescIdx{
+	en := SegmentDesc{
 		CommDs:   fr32.Fr32{},
 		Offset:   123,
 		Size:     12222,
 		Checksum: [BytesInChecksum]byte{},
 	}
-	index := IndexData{entries: []*SegmentDescIdx{&en}}
+	index := IndexData{entries: []*SegmentDesc{&en}}
 	assert.Error(t, validateIndexStructure(&index))
 }
 

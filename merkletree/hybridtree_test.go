@@ -3,15 +3,14 @@ package merkletree
 import (
 	"testing"
 
-	"github.com/filecoin-project/go-data-segment/util"
 	commcid "github.com/filecoin-project/go-fil-commcid"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/ipfs/go-cid"
 	"github.com/stretchr/testify/assert"
 )
 
-func TestHybridTreeSunshine(t *testing.T) {
-	ht, err := NewHybridTree(2)
+func TestHybridSunshine(t *testing.T) {
+	ht, err := NewHybrid(2)
 	assert.NoError(t, err)
 	{
 		// siplest sunshine test
@@ -44,7 +43,7 @@ func TestHybridTreeSunshine(t *testing.T) {
 	}
 }
 
-func TestHybridTreeAsGenerateUnsealedCID(t *testing.T) {
+func TestHybridAsGenerateUnsealedCID(t *testing.T) {
 
 	pieceInfos := []abi.PieceInfo{
 		{PieceCID: Must(cid.Parse("baga6ea4seaqknzm22isnhsxt2s4dnw45kfywmhenngqq3nc7jvecakoca6ksyhy")), Size: 256 << 20},  // https://filfox.info/en/deal/3755444
@@ -61,35 +60,37 @@ func TestHybridTreeAsGenerateUnsealedCID(t *testing.T) {
 	expCommD := *(*Node)(Must(commcid.CIDToPieceCommitmentV1(
 		Must(cid.Parse("baga6ea4seaqiw3gbmstmexb7sqwkc5r23o3i7zcyx5kr76pfobpykes3af62kca")))))
 
-	_ = expCommD
-
 	type nodeInfo struct {
 		lvl int
 		idx uint64
 		n   Node
 	}
 
-	nodeInfos := make([]nodeInfo, 0, len(pieceInfos))
-	offset := uint64(0)
+	dealInfos := make([]DealInfo, 0, len(pieceInfos))
 	for _, pi := range pieceInfos {
-		sizeInNodes := uint64(pi.Size) / 32
-		ni := nodeInfo{
-			lvl: util.Log2Ceil(sizeInNodes),               // level is log2(sizeInNodes)
-			idx: (offset + sizeInNodes - 1) / sizeInNodes, // idx is ceil(offset/sizeInNodes)
-			n:   *(*Node)(Must(commcid.CIDToPieceCommitmentV1(pi.PieceCID))),
-		}
-		offset = (ni.idx + 1) * sizeInNodes // select the next index at ni.lvl and go back to nodewise
-		nodeInfos = append(nodeInfos, ni)
+		dealInfos = append(dealInfos, DealInfo{
+			Comm: *(*Node)(Must(commcid.CIDToPieceCommitmentV1(pi.PieceCID))),
+			Size: uint64(pi.Size),
+		})
 	}
-
-	ht, err := NewHybridTree(30)
+	_, err := ComputeDealPlacement(dealInfos)
 	assert.NoError(t, err)
-	for i, n := range nodeInfos {
-		err := ht.SetNode(n.lvl, n.idx, &n.n)
-		assert.NoError(t, err, "piece info i: %d", i)
-	}
+
+	ht, err := NewHybrid(30)
+	assert.NoError(t, err)
+
+	err = PlaceDeals(&ht, dealInfos)
+	assert.NoError(t, err)
 
 	assert.Equal(t, expCommD, ht.Root())
+
+	for i, n := range dealInfos {
+		proof, err := ht.CollectProof(n.Level, n.Index)
+		assert.NoError(t, err, "node info %d", i)
+		root, err := proof.ComputeRoot(&n.Comm)
+		assert.NoError(t, err, "node info %d", i)
+		assert.Equal(t, expCommD, *root)
+	}
 }
 
 func Must[T any](val T, err error) T {

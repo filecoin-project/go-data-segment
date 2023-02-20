@@ -36,6 +36,10 @@ type InclusionProof struct {
 	ProofIndex merkletree.ProofData
 }
 
+func indexAreaStart(sizePa abi.PaddedPieceSize) uint64 {
+	return uint64(sizePa) - uint64(MaxIndexEntriesInDeal(sizePa))*uint64(EntrySize)
+}
+
 func (ip InclusionProof) ComputeExpectedAuxData(veriferData InclusionVerifierData) (*InclusionAuxData, error) {
 	// Verification flow:
 	//	1. Decode Client's Piece commitment
@@ -43,7 +47,7 @@ func (ip InclusionProof) ComputeExpectedAuxData(veriferData InclusionVerifierDat
 	//	3. Compute size of aggregator's deal and offset of Client's deal within the Aggreggator's deal.
 	//	4. Create the DataSegmentIndexEntry based on Client's data and offset from 3
 	//	5. Compute second assumed aggregator's commitment based on the data segment index entry inclusion proof.
-	//  6. TODO: Check if DataSegmentIndexEntry falls into the correct area.
+	//  6. Check if DataSegmentIndexEntry falls into the correct area.
 	//	7. Compute second assumed aggregator's deal size.
 	//	8. Compare deal sizes and commitments from steps 2+3 against steps 5+6. Fail if not equal.
 	//	9. Return the computed values of aggregator's Commitment and Size as AuxData.
@@ -79,13 +83,18 @@ func (ip InclusionProof) ComputeExpectedAuxData(veriferData InclusionVerifierDat
 	if *assumedCommPa2 != *assumedCommPa {
 		return nil, xerrors.Errorf("aggregator's data commiements don't match: %x != %x", assumedCommPa, assumedCommPa2)
 	}
-	//TODO: check if the index entry falls into index area
 
 	const BytesInDataSegmentIndexEntry = 2 * BytesInNode
-	// check overflow
+	// TODO: check overflow
 	assumedSizePa2 := abi.PaddedPieceSize((1 << ip.ProofIndex.Depth()) * BytesInDataSegmentIndexEntry)
 	if assumedSizePa2 != assumedSizePa {
 		return nil, xerrors.Errorf("aggregator's data size doesn't match")
+	}
+	idxStart := indexAreaStart(assumedSizePa2)
+	// TODO: check overflow?
+	if ip.ProofIndex.Index()*uint64(EntrySize) < idxStart {
+		return nil, xerrors.Errorf("index entry at wrong position: %d < %d",
+			ip.ProofIndex.Index()*uint64(EntrySize), idxStart)
 	}
 
 	cidPa, err := commcid.PieceCommitmentV1ToCID(assumedCommPa[:])
@@ -97,4 +106,19 @@ func (ip InclusionProof) ComputeExpectedAuxData(veriferData InclusionVerifierDat
 		CommPa: cidPa,
 		SizePa: assumedSizePa,
 	}, nil
+}
+
+func CollectInclusionProof(ht *merkletree.Hybrid, dealInfo merkletree.DealInfo, indexEntry int) (*InclusionProof, error) {
+	subTreeProof, err := ht.CollectProof(dealInfo.Level, dealInfo.Index)
+	if err != nil {
+		return nil, xerrors.Errorf("collecting subtree proof: %w", err)
+	}
+
+	iAS := indexAreaStart(abi.PaddedPieceSize(1 << ht.MaxLevel()))
+	dsProof, err := ht.CollectProof(1, iAS/2+uint64(indexEntry))
+	if err != nil {
+		return nil, xerrors.Errorf("collecting subtree proof: %w", err)
+	}
+
+	return &InclusionProof{ProofSubtree: subTreeProof, ProofIndex: dsProof}, nil
 }

@@ -232,7 +232,7 @@ func TestTruncatedHashTruncation(t *testing.T) {
 	// Truncated hash digest of input nodes (which are each truncated to 254 bits)
 	expected, err := hex.DecodeString("ab54eaeefe01cd1396247efa4ac59029b4c44c1729f5200f0693645d427db502")
 	assert.NoError(t, err)
-	assert.Equal(t, expected[digestBytes-1]&0b00111111, truncatedHash[digestBytes-1])
+	assert.Equal(t, expected[NodeSize-1]&0b00111111, truncatedHash[NodeSize-1])
 	assert.Equal(t, expected, truncatedHash[:])
 }
 

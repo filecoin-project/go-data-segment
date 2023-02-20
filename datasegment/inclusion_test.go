@@ -2,479 +2,227 @@ package datasegment
 
 import (
 	"bytes"
-	"encoding/binary"
-	"encoding/hex"
+	"fmt"
 	"testing"
 
-	"github.com/filecoin-project/go-data-segment/fr32"
 	"github.com/filecoin-project/go-data-segment/merkletree"
 	"github.com/filecoin-project/go-data-segment/util"
 	commcid "github.com/filecoin-project/go-fil-commcid"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-// HELPER METHODS
-func getLeafs(startIdx int, amount int) [][]byte {
-	leafs := make([][]byte, amount)
-	for i := startIdx; i < startIdx+amount; i++ {
-		singletonInput, _ := hex.DecodeString("deadbeef")
-		singletonInput[0] ^= byte(i)
-		leafs[i] = singletonInput
+var sampleSizes1 = []uint64{
+	256 << 20,
+	1024 << 20,
+	512 << 20,
+	512 << 20,
+	1024 << 20,
+	256 << 20,
+	512 << 20,
+	1024 << 20,
+	256 << 20,
+	512 << 20,
+}
+
+func commForDeal(x int) merkletree.Node {
+	res := merkletree.Node{}
+	res[0] = 0xd
+	res[1] = 0xe
+	res[2] = 0xa
+	res[3] = 0x1
+
+	s := fmt.Sprintf("%d", x)
+	for i := 5; len(s) != 0; i++ {
+		res[i] = s[0] - '0'
+		s = s[1:]
 	}
-	return leafs
+	return res
 }
 
-// Returns the inclusion, the node that is the root of the subtree inclusion, along with the amount of leafs it should cover
-func validInclusion(t *testing.T) (Inclusion, *merkletree.Node, int) {
-	leafs := [][]byte{{0x01, 0x02}, {0x03}, {0x04}, {0x05}, {0x06}}
-	tree, err := merkletree.GrowTree(leafs)
-	assert.NoError(t, err)
-	digest := *merkletree.TruncatedHash(leafs[3])
-	commDA := fr32.Fr32(digest)
-	proofSub, err := tree.ConstructProof(1, 1)
-	assert.NoError(t, err)
-	proofDs, err := tree.ConstructProof(tree.Depth()-1, 3)
-	assert.NoError(t, err)
-	return Inclusion{CommDA: commDA, Size: 1234, ProofSubtree: proofSub, ProofDs: proofDs}, tree.Node(1, 1), 3
-}
+func buildDealTree(t *testing.T, containerSize abi.PaddedPieceSize, dealSizes []uint64) (*merkletree.Hybrid, []merkletree.DealInfo) {
+	ht, err := merkletree.NewHybrid(util.Log2Ceil(uint64(containerSize / merkletree.NodeSize)))
+	require.NoError(t, err)
+	require.NotNil(t, ht)
 
-// PUBLIC METHODS
-func TestInclusionSerialization(t *testing.T) {
-	leafs := [][]byte{{0x01, 0x02}, {0x03}, {0x04}, {0x05}, {0x06}}
-	tree, err := merkletree.GrowTree(leafs)
-	assert.NoError(t, err)
-	commDA := fr32.Fr32{}
-	proofSub, err := tree.ConstructProof(1, 1)
-	assert.NoError(t, err)
-	proofDs, err := tree.ConstructProof(1, 0)
-	assert.NoError(t, err)
-	structure := Inclusion{CommDA: commDA, Size: 1234, ProofSubtree: proofSub, ProofDs: proofDs}
-	encoded, errEnc := SerializeInclusion(structure)
-	assert.Nil(t, errEnc)
-	assert.NotNil(t, encoded)
-	decoded, errDec := DeserializeInclusion(encoded)
-	assert.Nil(t, errDec)
-	assert.NotNil(t, decoded)
-	assert.Equal(t, commDA, decoded.CommDA)
-	assert.Equal(t, proofSub.Path(), decoded.ProofSubtree.Path())
-	assert.Equal(t, proofSub.Depth(), decoded.ProofSubtree.Depth())
-	assert.Equal(t, proofSub.Index(), decoded.ProofSubtree.Index())
-	assert.Equal(t, proofDs.Path(), decoded.ProofDs.Path())
-	assert.Equal(t, proofDs.Depth(), decoded.ProofDs.Depth())
-	assert.Equal(t, proofDs.Index(), decoded.ProofDs.Index())
-	assert.Equal(t, 1234, decoded.Size)
-}
-
-func TestVerifyEntryInclusion(t *testing.T) {
-	sizeDA := 400
-	offset := uint64(98)
-	leafData := getLeafs(0, sizeDA)
-	dealTree, err := merkletree.GrowTree(leafData)
-	assert.NoError(t, err)
-	comm := dealTree.Leafs()[offset]
-	// The client's data segment is the leaf at offset
-	subtreeProof, err := dealTree.ConstructProof(dealTree.Depth()-1, offset)
-	assert.NoError(t, err)
-	assert.NoError(t, VerifyInclusion((*fr32.Fr32)(&comm), (*fr32.Fr32)(dealTree.Root()), subtreeProof))
-}
-
-func TestVerifySegmentInclusion(t *testing.T) {
-	sizeData := uint64(129)
-	offset := uint64(98)
-	sizeDs := uint64(1)
-	leafData := getLeafs(0, int(sizeData))
-	dealTree, err := merkletree.GrowTree(leafData)
-	assert.NoError(t, err)
-	comm := dealTree.Leafs()[offset]
-	entry, err2 := MakeDataSegmentIdx((*fr32.Fr32)(&comm), offset*BytesInNode, sizeDs*BytesInNode)
-	assert.Nil(t, err2)
-	// We let the client segments be all the leafs
-	sizes := make([]uint64, sizeData)
-	for i := range sizes {
-		sizes[i] = 1
+	dealInfos := make([]merkletree.DealInfo, 0, len(dealSizes))
+	for i, ds := range dealSizes {
+		dealInfos = append(dealInfos, merkletree.DealInfo{
+			Comm: commForDeal(i),
+			Size: ds,
+		})
 	}
-	incTree, indexStart, err := MakeInclusionTree(dealTree.Leafs()[:sizeData], sizes, dealTree)
-	assert.NoError(t, err)
-	proofDs, err := MakeIndexProof(incTree, offset, indexStart)
-	assert.NoError(t, err)
-	assert.NoError(t, VerifySegDescInclusion(entry, (*fr32.Fr32)(incTree.Root()), incTree.LeafCount(), proofDs))
-}
 
-func TestVerifyInclusionTree(t *testing.T) {
-	sizeData := uint64(1235)
-	offset := uint64(123)
-	leafData := getLeafs(0, int(sizeData))
-	dealTree, err := merkletree.GrowTree(leafData)
-	assert.NoError(t, err)
-	comm := dealTree.Leafs()[offset]
-	// We let the client segments be all the leafs
-	sizes := make([]uint64, sizeData)
-	for i := range sizes {
-		sizes[i] = 1
+	totalSize, err := merkletree.ComputeDealPlacement(dealInfos)
+	require.NoError(t, err)
+	assert.LessOrEqual(t, totalSize, containerSize)
+	err = merkletree.PlaceDeals(&ht, dealInfos)
+	require.NoError(t, err)
+
+	return &ht, dealInfos
+}
+func TestComputeExpectedAuxData1(t *testing.T) {
+	var SizePa abi.PaddedPieceSize = 32 << 30
+	ht, dealInfos := buildDealTree(t, SizePa, sampleSizes1)
+
+	index, err := MakeIndexFromDealInfos(dealInfos)
+
+	require.NoError(t, err)
+	indexStartNodes := indexAreaStart(SizePa) / merkletree.NodeSize
+	for i, e := range index.Entries {
+		ns := e.IntoNodes()
+		err := ht.SetNode(0, indexStartNodes+2*uint64(i), &ns[0])
+		assert.NoError(t, err)
+		err = ht.SetNode(0, indexStartNodes+2*uint64(i)+1, &ns[1])
+		assert.NoError(t, err)
 	}
-	incTree, indexStart, err := MakeInclusionTree(dealTree.Leafs()[:sizeData], sizes, dealTree)
-	assert.NoError(t, err)
-	assert.NotNil(t, incTree)
 
-	sizeDA := incTree.LeafCount()
+	root := ht.Root()
+	CommPa, err := commcid.PieceCommitmentV1ToCID(root[:])
+	require.NoError(t, err)
 
-	subtreeProof, err := incTree.ConstructProof(incTree.Depth()-1, offset)
-	assert.NoError(t, err)
-	assert.NoError(t, VerifyInclusion((*fr32.Fr32)(&comm), (*fr32.Fr32)(incTree.Root()), subtreeProof))
-	proofDs, err := MakeIndexProof(incTree, offset, indexStart)
-	assert.NoError(t, err)
-	assert.NoError(t,
-		Validate(
-			(*fr32.Fr32)(&comm), 1,
-			(*fr32.Fr32)(incTree.Root()), sizeDA,
-			subtreeProof, proofDs))
-}
+	expectedAuxData := InclusionAuxData{
+		CommPa: CommPa,
+		SizePa: SizePa,
+	}
 
-type inclusionData struct {
-	segmentIdx  uint64
-	segmentSize uint64
-	segments    int
-}
+	for i, di := range dealInfos {
+		ip, err := CollectInclusionProof(ht, di, i)
+		require.NoError(t, err)
+		require.NotNil(t, ip)
 
-// Make a list of test sizes and return this list along with the total amount of nodes in the leaf tree and the start position of the client segment which we are interested in
-// Currently we just use a static segment-size, since otherwise it is hard to automatically ensure proper partitioning of subtrees
-// TODO is to ensure that segments distributed correctly in the deal with proper subtree
-func testSizes(d inclusionData) ([]uint64, uint64, uint64) {
-	sizes := make([]uint64, d.segments)
-	var totalUsed, offset uint64
-	for j := range sizes {
-		if d.segmentIdx != uint64(j) {
-			// Round to nearest 2-power
-			sizes[j] = 1 << util.Log2Ceil(uint64(d.segmentSize))
-		} else {
-			// Adjust the segment we care about
-			sizes[d.segmentIdx] = d.segmentSize
-			offset = totalUsed
+		CommPc, err := commcid.PieceCommitmentV1ToCID(di.Comm[:])
+		assert.NoError(t, err)
+		verifData := InclusionVerifierData{
+			CommPc: CommPc,
+			SizePc: abi.PaddedPieceSize(di.Size),
 		}
-		// Round up to nearest 2-power
-		totalUsed += 1 << util.Log2Ceil(uint64(sizes[j]))
-	}
-	return sizes, totalUsed, offset
-}
-
-func TestComputeExpectedAuxData(t *testing.T) {
-	testData := []inclusionData{
-		{
-			segmentIdx:  0, // first segment
-			segmentSize: 128,
-			segments:    42,
-		},
-		{
-			segmentIdx:  41, // last segment
-			segmentSize: 1,  // smallest size
-			segments:    42,
-		},
-		{
-			segmentIdx:  14, // middle segment
-			segmentSize: 64,
-			segments:    64,
-		},
-	}
-	for _, data := range testData {
-		sizes, sizeData, offset := testSizes(data)
-		leafData := getLeafs(0, int(sizeData))
-		dealTree, err := merkletree.GrowTree(leafData)
-		assert.NoError(t, err)
-
-		segments := make([]merkletree.Node, data.segments)
-		curOffset := uint64(0)
-		for j := range sizes {
-			lvl, idx := SegmentRoot(dealTree.Depth(), sizes[j], curOffset)
-			segments[j] = *dealTree.Node(lvl, idx)
-			curOffset += sizes[j]
+		if i == 3 && false {
+			buf := new(bytes.Buffer)
+			err = verifData.MarshalCBOR(buf)
+			assert.NoError(t, err)
+			fmt.Printf("verifData := %#v\n", buf.Bytes())
+			buf.Reset()
+			err = ip.MarshalCBOR(buf)
+			assert.NoError(t, err)
+			fmt.Printf("incProof := %#v\n", buf.Bytes())
+			buf.Reset()
+			err = expectedAuxData.MarshalCBOR(buf)
+			assert.NoError(t, err)
+			fmt.Printf("expectedAux := %#v\n", buf.Bytes())
 		}
-
-		// Ensure that we take include the test segment we want
-		dealLvl, dealIdx := SegmentRoot(dealTree.Depth(), data.segmentSize, offset)
-		segments[data.segmentIdx] = *dealTree.Node(dealLvl, dealIdx)
-		incTree, indexStart, err := MakeInclusionTree(segments, sizes, dealTree)
+		buf := new(bytes.Buffer)
+		err = verifData.MarshalCBOR(buf)
 		assert.NoError(t, err)
-		sizeDA := incTree.LeafCount()
+		verifData = InclusionVerifierData{}
+		verifData.UnmarshalCBOR(buf)
 
-		clientLvl, clientIdx := SegmentRoot(incTree.Depth(), data.segmentSize, offset)
-		comm := incTree.Node(clientLvl, clientIdx)
-
-		// Sanity check that the client's segment is the one being included in the index
-		assert.Equal(t, segments[data.segmentIdx], *comm)
-		subtreeProof, err := incTree.ConstructProof(clientLvl, clientIdx)
+		newAux, err := ip.ComputeExpectedAuxData(verifData)
 		assert.NoError(t, err)
-		assert.NoError(t, VerifyInclusion((*fr32.Fr32)(comm), (*fr32.Fr32)(incTree.Root()), subtreeProof))
-
-		indexProof, err := MakeIndexProof(incTree, data.segmentIdx, indexStart)
-		assert.NoError(t, err)
-		assert.NoError(t,
-			Validate(
-				(*fr32.Fr32)(comm), data.segmentSize,
-				(*fr32.Fr32)(incTree.Root()), sizeDA,
-				subtreeProof, indexProof,
-			))
-
-		commPc, err := commcid.PieceCommitmentV1ToCID(comm[:])
-		assert.NoError(t, err)
-		commPa, err := commcid.PieceCommitmentV1ToCID(incTree.Root()[:])
-		assert.NoError(t, err)
-
-		incProof := InclusionProof{ProofSubtree: *subtreeProof, ProofIndex: *indexProof}
-		producedAuxData, err := incProof.ComputeExpectedAuxData(InclusionVerifierData{CommPc: commPc, SizePc: nodesToPaddedSize(data.segmentSize)})
-		assert.NoError(t, err)
-		expectedAuxData := InclusionAuxData{
-			CommPa: commPa,
-			SizePa: nodesToPaddedSize(1 << util.Log2Ceil(sizeDA)),
-		}
-		assert.Equal(t, &expectedAuxData, producedAuxData)
-
+		assert.Equal(t, expectedAuxData, *newAux)
 	}
 }
 
-func nodesToPaddedSize(a uint64) abi.PaddedPieceSize {
-	return abi.PaddedPieceSize(a * BytesInNode)
-}
-
-func TestVerifyInclusionTreeSoak(t *testing.T) {
-	testData := []inclusionData{
-		{
-			segmentIdx:  0, // first segment
-			segmentSize: 128,
-			segments:    42,
-		},
-		{
-			segmentIdx:  41, // last segment
-			segmentSize: 1,  // smallest size
-			segments:    42,
-		},
-		{
-			segmentIdx:  14, // middle segment
-			segmentSize: 11,
-			segments:    64,
-		},
-	}
-	for _, data := range testData {
-		sizes, sizeData, offset := testSizes(data)
-		leafData := getLeafs(0, int(sizeData))
-		dealTree, err := merkletree.GrowTree(leafData)
-		assert.NoError(t, err)
-
-		segments := make([]merkletree.Node, data.segments)
-		curOffset := uint64(0)
-		for j := range sizes {
-			lvl, idx := SegmentRoot(dealTree.Depth(), sizes[j], curOffset)
-			segments[j] = *dealTree.Node(lvl, idx)
-			curOffset += sizes[j]
-		}
-
-		// Ensure that we take include the test segment we want
-		dealLvl, dealIdx := SegmentRoot(dealTree.Depth(), data.segmentSize, offset)
-		segments[data.segmentIdx] = *dealTree.Node(dealLvl, dealIdx)
-		incTree, indexStart, err := MakeInclusionTree(segments, sizes, dealTree)
-		assert.NoError(t, err)
-		sizeDA := incTree.LeafCount()
-
-		clientLvl, clientIdx := SegmentRoot(incTree.Depth(), data.segmentSize, offset)
-		comm := incTree.Node(clientLvl, clientIdx)
-
-		// Sanity check that the client's segment is the one being included in the index
-		assert.Equal(t, segments[data.segmentIdx], *comm)
-		subtreeProof, err := incTree.ConstructProof(clientLvl, clientIdx)
-		assert.NoError(t, err)
-		assert.NoError(t, VerifyInclusion((*fr32.Fr32)(comm), (*fr32.Fr32)(incTree.Root()), subtreeProof))
-
-		proofDs, err := MakeIndexProof(incTree, data.segmentIdx, indexStart)
-		assert.NoError(t, err)
-		assert.NoError(t,
-			Validate(
-				(*fr32.Fr32)(comm), data.segmentSize,
-				(*fr32.Fr32)(incTree.Root()), sizeDA,
-				subtreeProof, proofDs,
-			))
-	}
-}
-
-// NEGATIVE TESTS
-func TestNegativeInclusionSerializationSize(t *testing.T) {
-	inc := Inclusion{
-		CommDA:       fr32.Fr32{},
-		Size:         0,
-		ProofSubtree: nil,
-		ProofDs:      nil,
-	}
-	serialized, err := SerializeInclusion(inc)
-	assert.NotNil(t, err)
-	assert.Nil(t, serialized)
-}
-
-func TestNegativeInclusionDeserializeProofEmpty(t *testing.T) {
-	_, err := DeserializeInclusion(nil)
-	assert.NotNil(t, err)
-	_, err = DeserializeInclusion([]byte{})
-	assert.NotNil(t, err)
-}
-
-func TestNegativeInclusionDeserializeProofSize(t *testing.T) {
-	buf := new(bytes.Buffer)
-	err := binary.Write(buf, binary.LittleEndian, uint64(0))
+func TestComputeExpectedAuxDataGolden1(t *testing.T) {
+	var verifData InclusionVerifierData
+	err := verifData.UnmarshalCBOR(bytes.NewReader([]byte{
+		0x82, 0xd8, 0x2a, 0x58, 0x28, 0x0, 0x1, 0x81, 0xe2, 0x3, 0x92, 0x20, 0x20, 0xd, 0xe, 0xa,
+		0x1, 0x0, 0x3, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+		0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1a, 0x20, 0x0, 0x0, 0x0}))
 	assert.NoError(t, err)
-	proof, size, err := deserializeProof(buf.Bytes())
-	assert.Nil(t, proof)
-	assert.Equal(t, -1, size)
-	assert.NotNil(t, err)
-}
 
-func TestNegativeInclusionDeserializeProofSize2(t *testing.T) {
-	encoded := make([]byte, minSizeInclusion)
-	_, err := DeserializeInclusion(encoded)
-	assert.NotNil(t, err)
-}
+	var incProof InclusionProof
+	err = incProof.UnmarshalCBOR(bytes.NewReader([]byte{
+		0x82, 0x82, 0x5, 0x86, 0x58, 0x20, 0xd, 0xe, 0xa, 0x1, 0x0, 0x2, 0x0, 0x0, 0x0, 0x0, 0x0,
+		0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+		0x0, 0x0, 0x0, 0x58, 0x20, 0xd, 0xe, 0xa, 0x1, 0x0, 0x4, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+		0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+		0x0, 0x58, 0x20, 0xb6, 0xa5, 0xc5, 0xd0, 0xcb, 0xaa, 0xbd, 0x7e, 0x63, 0xde, 0x25, 0x6c,
+		0x81, 0x9d, 0x84, 0x62, 0x3f, 0xde, 0x6f, 0x53, 0xd6, 0x16, 0x12, 0x5, 0x8, 0x66, 0x7b,
+		0x12, 0x65, 0x9f, 0x7c, 0x3e, 0x58, 0x20, 0x2d, 0xf9, 0xcf, 0x74, 0xcb, 0x24, 0xe6, 0x34,
+		0x9b, 0x80, 0x93, 0x99, 0xb3, 0xa0, 0x46, 0x64, 0x2, 0x19, 0xdc, 0xe8, 0xb9, 0x79, 0x54,
+		0xee, 0xc4, 0x3b, 0xf6, 0x5, 0xdc, 0xc5, 0x9b, 0x2d, 0x58, 0x20, 0xd8, 0x61, 0x2, 0x18,
+		0x42, 0x5a, 0xb5, 0xe9, 0x5b, 0x1c, 0xa6, 0x23, 0x9d, 0x29, 0xa2, 0xe4, 0x20, 0xd7, 0x6,
+		0xa9, 0x6f, 0x37, 0x3e, 0x2f, 0x9c, 0x9a, 0x91, 0xd7, 0x59, 0xd1, 0x9b, 0x1, 0x58, 0x20,
+		0xd6, 0x28, 0xc4, 0xe1, 0x1, 0xd5, 0xca, 0x9a, 0xa4, 0xb3, 0x41, 0xe4, 0xd0, 0xf0, 0x28,
+		0xbe, 0x86, 0x36, 0xfd, 0x7a, 0xc, 0x3b, 0xf6, 0x91, 0xce, 0xf1, 0x61, 0x13, 0xb8, 0xd9,
+		0x79, 0x32, 0x82, 0x1a, 0x1f, 0xfc, 0x0, 0x3, 0x98, 0x1d, 0x58, 0x20, 0xca, 0x99, 0xa4,
+		0x13, 0x70, 0xd2, 0xdd, 0x4, 0xf7, 0xd9, 0x7b, 0xf, 0xed, 0x8a, 0x98, 0x33, 0x3, 0x12, 0x91,
+		0xa6, 0xf7, 0xc8, 0x25, 0xd7, 0x24, 0x5b, 0x42, 0x8f, 0xef, 0x8b, 0x27, 0x34, 0x58, 0x20,
+		0x2b, 0xc4, 0xf6, 0xca, 0xfd, 0x6a, 0x83, 0x66, 0xd0, 0x32, 0xdf, 0xc7, 0xfc, 0xee, 0xfd,
+		0xf, 0xf2, 0xfb, 0x34, 0xdd, 0x2e, 0xa9, 0x10, 0xda, 0x45, 0x47, 0x73, 0x5, 0x73, 0x33,
+		0xdd, 0x2a, 0x58, 0x20, 0x57, 0x8b, 0x81, 0xa6, 0x59, 0x66, 0x24, 0xf3, 0x26, 0xb1, 0xd3,
+		0x1e, 0x2e, 0x3d, 0xb9, 0x10, 0x62, 0x54, 0x5d, 0x2f, 0x81, 0x9d, 0x60, 0x5c, 0xc4, 0xaf,
+		0xef, 0x33, 0x77, 0x15, 0x18, 0x0, 0x58, 0x20, 0xe, 0x6, 0x7c, 0x94, 0x86, 0xc9, 0xd4, 0x1f,
+		0xf6, 0xcf, 0xea, 0xf2, 0xd4, 0xb3, 0x30, 0xd4, 0x32, 0xe6, 0xae, 0xfa, 0x18, 0xea, 0xcb,
+		0xb5, 0xce, 0x7, 0x2c, 0xa1, 0x97, 0x76, 0x2, 0x15, 0x58, 0x20, 0x1f, 0x7a, 0xc9, 0x59,
+		0x55, 0x10, 0xe0, 0x9e, 0xa4, 0x1c, 0x46, 0xb, 0x17, 0x64, 0x30, 0xbb, 0x32, 0x2c, 0xd6,
+		0xfb, 0x41, 0x2e, 0xc5, 0x7c, 0xb1, 0x7d, 0x98, 0x9a, 0x43, 0x10, 0x37, 0x2f, 0x58, 0x20,
+		0xfc, 0x7e, 0x92, 0x82, 0x96, 0xe5, 0x16, 0xfa, 0xad, 0xe9, 0x86, 0xb2, 0x8f, 0x92, 0xd4,
+		0x4a, 0x4f, 0x24, 0xb9, 0x35, 0x48, 0x52, 0x23, 0x37, 0x6a, 0x79, 0x90, 0x27, 0xbc, 0x18,
+		0xf8, 0x33, 0x58, 0x20, 0x8, 0xc4, 0x7b, 0x38, 0xee, 0x13, 0xbc, 0x43, 0xf4, 0x1b, 0x91,
+		0x5c, 0xe, 0xed, 0x99, 0x11, 0xa2, 0x60, 0x86, 0xb3, 0xed, 0x62, 0x40, 0x1b, 0xf9, 0xd5,
+		0x8b, 0x8d, 0x19, 0xdf, 0xf6, 0x24, 0x58, 0x20, 0xb2, 0xe4, 0x7b, 0xfb, 0x11, 0xfa, 0xcd,
+		0x94, 0x1f, 0x62, 0xaf, 0x5c, 0x75, 0xf, 0x3e, 0xa5, 0xcc, 0x4d, 0xf5, 0x17, 0xd5, 0xc4,
+		0xf1, 0x6d, 0xb2, 0xb4, 0xd7, 0x7b, 0xae, 0xc1, 0xa3, 0x2f, 0x58, 0x20, 0xf9, 0x22, 0x61,
+		0x60, 0xc8, 0xf9, 0x27, 0xbf, 0xdc, 0xc4, 0x18, 0xcd, 0xf2, 0x3, 0x49, 0x31, 0x46, 0x0,
+		0x8e, 0xae, 0xfb, 0x7d, 0x2, 0x19, 0x4d, 0x5e, 0x54, 0x81, 0x89, 0x0, 0x51, 0x8, 0x58, 0x20,
+		0x2c, 0x1a, 0x96, 0x4b, 0xb9, 0xb, 0x59, 0xeb, 0xfe, 0xf, 0x6d, 0xa2, 0x9a, 0xd6, 0x5a,
+		0xe3, 0xe4, 0x17, 0x72, 0x4a, 0x8f, 0x7c, 0x11, 0x74, 0x5a, 0x40, 0xca, 0xc1, 0xe5, 0xe7,
+		0x40, 0x11, 0x58, 0x20, 0xfe, 0xe3, 0x78, 0xce, 0xf1, 0x64, 0x4, 0xb1, 0x99, 0xed, 0xe0,
+		0xb1, 0x3e, 0x11, 0xb6, 0x24, 0xff, 0x9d, 0x78, 0x4f, 0xbb, 0xed, 0x87, 0x8d, 0x83, 0x29,
+		0x7e, 0x79, 0x5e, 0x2, 0x4f, 0x2, 0x58, 0x20, 0x8e, 0x9e, 0x24, 0x3, 0xfa, 0x88, 0x4c, 0xf6,
+		0x23, 0x7f, 0x60, 0xdf, 0x25, 0xf8, 0x3e, 0xe4, 0xd, 0xca, 0x9e, 0xd8, 0x79, 0xeb, 0x6f,
+		0x63, 0x52, 0xd1, 0x50, 0x84, 0xf5, 0xad, 0xd, 0x3f, 0x58, 0x20, 0x75, 0x2d, 0x96, 0x93,
+		0xfa, 0x16, 0x75, 0x24, 0x39, 0x54, 0x76, 0xe3, 0x17, 0xa9, 0x85, 0x80, 0xf0, 0x9, 0x47,
+		0xaf, 0xb7, 0xa3, 0x5, 0x40, 0xd6, 0x25, 0xa9, 0x29, 0x1c, 0xc1, 0x2a, 0x7, 0x58, 0x20,
+		0x70, 0x22, 0xf6, 0xf, 0x7e, 0xf6, 0xad, 0xfa, 0x17, 0x11, 0x7a, 0x52, 0x61, 0x9e, 0x30,
+		0xce, 0xa8, 0x2c, 0x68, 0x7, 0x5a, 0xdf, 0x1c, 0x66, 0x77, 0x86, 0xec, 0x50, 0x6e, 0xef,
+		0x2d, 0x19, 0x58, 0x20, 0xd9, 0x98, 0x87, 0xb9, 0x73, 0x57, 0x3a, 0x96, 0xe1, 0x13, 0x93,
+		0x64, 0x52, 0x36, 0xc1, 0x7b, 0x1f, 0x4c, 0x70, 0x34, 0xd7, 0x23, 0xc7, 0xa9, 0x9f, 0x70,
+		0x9b, 0xb4, 0xda, 0x61, 0x16, 0x2b, 0x58, 0x20, 0xd0, 0xb5, 0x30, 0xdb, 0xb0, 0xb4, 0xf2,
+		0x5c, 0x5d, 0x2f, 0x2a, 0x28, 0xdf, 0xee, 0x80, 0x8b, 0x53, 0x41, 0x2a, 0x2, 0x93, 0x1f,
+		0x18, 0xc4, 0x99, 0xf5, 0xa2, 0x54, 0x8, 0x6b, 0x13, 0x26, 0x58, 0x20, 0x84, 0xc0, 0x42,
+		0x1b, 0xa0, 0x68, 0x5a, 0x1, 0xbf, 0x79, 0x5a, 0x23, 0x44, 0x6, 0x4f, 0xe4, 0x24, 0xbd,
+		0x52, 0xa9, 0xd2, 0x43, 0x77, 0xb3, 0x94, 0xff, 0x4c, 0x4b, 0x45, 0x68, 0xe8, 0x11, 0x58,
+		0x20, 0x65, 0xf2, 0x9e, 0x5d, 0x98, 0xd2, 0x46, 0xc3, 0x8b, 0x38, 0x8c, 0xfc, 0x6, 0xdb,
+		0x1f, 0x6b, 0x2, 0x13, 0x3, 0xc5, 0xa2, 0x89, 0x0, 0xb, 0xdc, 0xe8, 0x32, 0xa9, 0xc3, 0xec,
+		0x42, 0x1c, 0x58, 0x20, 0xa2, 0x24, 0x75, 0x8, 0x28, 0x58, 0x50, 0x96, 0x5b, 0x7e, 0x33,
+		0x4b, 0x31, 0x27, 0xb0, 0xc0, 0x42, 0xb1, 0xd0, 0x46, 0xdc, 0x54, 0x40, 0x21, 0x37, 0x62,
+		0x7c, 0xd8, 0x79, 0x9c, 0xe1, 0x3a, 0x58, 0x20, 0xda, 0xfd, 0xab, 0x6d, 0xa9, 0x36, 0x44,
+		0x53, 0xc2, 0x6d, 0x33, 0x72, 0x6b, 0x9f, 0xef, 0xe3, 0x43, 0xbe, 0x8f, 0x81, 0x64, 0x9e,
+		0xc0, 0x9, 0xaa, 0xd3, 0xfa, 0xff, 0x50, 0x61, 0x75, 0x8, 0x58, 0x20, 0xd9, 0x41, 0xd5,
+		0xe0, 0xd6, 0x31, 0x4a, 0x99, 0x5c, 0x33, 0xff, 0xbd, 0x4f, 0xbe, 0x69, 0x11, 0x8d, 0x73,
+		0xd4, 0xe5, 0xfd, 0x2c, 0xd3, 0x1f, 0xf, 0x7c, 0x86, 0xeb, 0xdd, 0x14, 0xe7, 0x6, 0x58,
+		0x20, 0x51, 0x4c, 0x43, 0x5c, 0x3d, 0x4, 0xd3, 0x49, 0xa5, 0x36, 0x5f, 0xbd, 0x59, 0xff,
+		0xc7, 0x13, 0x62, 0x91, 0x11, 0x78, 0x59, 0x91, 0xc1, 0xa3, 0xc5, 0x3a, 0xf2, 0x20, 0x79,
+		0x74, 0x1a, 0x2f, 0x58, 0x20, 0xad, 0x6, 0x85, 0x39, 0x69, 0xd3, 0x7d, 0x34, 0xff, 0x8,
+		0xe0, 0x9f, 0x56, 0x93, 0xa, 0x4a, 0xd1, 0x9a, 0x89, 0xde, 0xf6, 0xc, 0xbf, 0xee, 0x7e,
+		0x1d, 0x33, 0x81, 0xc1, 0xe7, 0x1c, 0x37, 0x58, 0x20, 0x39, 0x56, 0xe, 0x7b, 0x13, 0xa9,
+		0x3b, 0x7, 0xa2, 0x43, 0xfd, 0x27, 0x20, 0xff, 0xa7, 0xcb, 0x3e, 0x1d, 0x2e, 0x50, 0x5a,
+		0xb3, 0x62, 0x9e, 0x79, 0xf4, 0x63, 0x13, 0x51, 0x2c, 0xda, 0x6, 0x58, 0x20, 0xcc, 0xc3,
+		0xc0, 0x12, 0xf5, 0xb0, 0x5e, 0x81, 0x1a, 0x2b, 0xbf, 0xdd, 0xf, 0x68, 0x33, 0xb8, 0x42,
+		0x75, 0xb4, 0x7b, 0xf2, 0x29, 0xc0, 0x5, 0x2a, 0x82, 0x48, 0x4f, 0x3c, 0x1a, 0x5b, 0x3d,
+		0x58, 0x20, 0x7d, 0xf2, 0x9b, 0x69, 0x77, 0x31, 0x99, 0xe8, 0xf2, 0xb4, 0xb, 0x77, 0x91,
+		0x9d, 0x4, 0x85, 0x9, 0xee, 0xd7, 0x68, 0xe2, 0xc7, 0x29, 0x7b, 0x1f, 0x14, 0x37, 0x3, 0x4f,
+		0xc3, 0xc6, 0x2c, 0x58, 0x20, 0x66, 0xce, 0x5, 0xa3, 0x66, 0x75, 0x52, 0xcf, 0x45, 0xc0,
+		0x2b, 0xcc, 0x4e, 0x83, 0x92, 0x91, 0x9b, 0xde, 0xac, 0x35, 0xde, 0x2f, 0xf5, 0x62, 0x71,
+		0x84, 0x8e, 0x9f, 0x7b, 0x67, 0x51, 0x7, 0x58, 0x20, 0xd8, 0x61, 0x2, 0x18, 0x42, 0x5a,
+		0xb5, 0xe9, 0x5b, 0x1c, 0xa6, 0x23, 0x9d, 0x29, 0xa2, 0xe4, 0x20, 0xd7, 0x6, 0xa9, 0x6f,
+		0x37, 0x3e, 0x2f, 0x9c, 0x9a, 0x91, 0xd7, 0x59, 0xd1, 0x9b, 0x1, 0x58, 0x20, 0xd0, 0xee,
+		0xf6, 0xd1, 0xbc, 0xca, 0xbc, 0x5b, 0x5b, 0x9e, 0x3a, 0xf2, 0xfe, 0xa8, 0xea, 0x9d, 0x18,
+		0x4f, 0x8, 0xf4, 0x3a, 0xc2, 0x7, 0x1b, 0xdc, 0x63, 0x5d, 0x44, 0xbb, 0xe3, 0x51, 0x15}))
 
-func TestNegativeInclusionDeserializeProofSize3(t *testing.T) {
-	t.Skip()
-	inclusion, _, _ := validInclusion(t)
-	buf := new(bytes.Buffer)
-	err := serializeProof(buf, inclusion.ProofDs)
+	var expectedAux InclusionAuxData
+	err = expectedAux.UnmarshalCBOR(bytes.NewReader([]byte{
+		0x82, 0xd8, 0x2a, 0x58, 0x28, 0x0, 0x1, 0x81, 0xe2, 0x3, 0x92, 0x20, 0x20, 0x3f, 0x46, 0xbc,
+		0x64, 0x5b, 0x7, 0xa3, 0xea, 0x2c, 0x4, 0xf0, 0x66, 0xf9, 0x39, 0xdd, 0xf7, 0xe2, 0x69,
+		0xdd, 0x77, 0x67, 0x1f, 0x9e, 0x1e, 0x61, 0xa3, 0xa3, 0x79, 0x7e, 0x66, 0x51, 0x27, 0x1b,
+		0x0, 0x0, 0x0, 0x8, 0x0, 0x0, 0x0, 0x0}))
 	assert.NoError(t, err)
-	encodedProof := buf.Bytes()
-	// Wrong size
-	encodedProof[0] += 1
-	_, _, errDec := deserializeProof(encodedProof)
-	assert.NotNil(t, errDec)
-}
 
-func TestNegativeInvalidIndexTreePos(t *testing.T) {
-	leafs := [][]byte{{0x01, 0x02}, {0x03}, {0x04}, {0x05}, {0x06}}
-	tree, err := merkletree.GrowTree(leafs)
+	newAux, err := incProof.ComputeExpectedAuxData(verifData)
 	assert.NoError(t, err)
-	proofSub, err := tree.ConstructProof(1, 1)
-	assert.NoError(t, err)
-	assert.Error(t, validateIndexTreePos(16, proofSub))
-}
-
-func TestNegativeVerifySegmentInclusion(t *testing.T) {
-	sizeData := uint64(129)
-	offset := uint64(98)
-	sizeDs := uint64(1)
-	leafData := getLeafs(0, int(sizeData))
-	dealTree, err := merkletree.GrowTree(leafData)
-	assert.NoError(t, err)
-	comm := fr32.Fr32(dealTree.Leafs()[offset])
-	entry, err2 := MakeDataSegmentIdx(&comm, offset, sizeDs)
-	assert.Nil(t, err2)
-	// We let the client segments be all the leafs
-	sizes := make([]uint64, sizeData)
-	for i := range sizes {
-		sizes[i] = 1
-	}
-	incTree, indexStart, err := MakeInclusionTree(dealTree.Leafs()[:sizeData], sizes, dealTree)
-	assert.NoError(t, err)
-	assert.NotNil(t, incTree)
-	sizeDA := incTree.LeafCount()
-	proofDs, err := MakeIndexProof(incTree, offset, indexStart)
-	assert.NoError(t, err)
-	// Wrong number of nodes in the deal
-	assert.Error(t, VerifySegDescInclusion(entry, (*fr32.Fr32)(incTree.Root()), 2048, proofDs))
-	// Wrong root node
-	assert.Error(t, VerifySegDescInclusion(entry, (*fr32.Fr32)(incTree.Node(2, 2)), sizeDA, proofDs))
-	// Wrong segment index, consists of 2 nodes
-	wrongEntry, err2 := MakeDataSegmentIdx(&comm, offset, 2)
-	assert.Nil(t, err2)
-	assert.Error(t, VerifySegDescInclusion(wrongEntry, (*fr32.Fr32)(incTree.Node(2, 2)), sizeDA, proofDs))
-	// Wrong index
-	wrongProofDs, err := MakeIndexProof(incTree, offset+1, indexStart)
-	assert.NoError(t, err)
-	assert.Error(t, VerifySegDescInclusion(entry, (*fr32.Fr32)(incTree.Root()), sizeDA, wrongProofDs))
-}
-
-func TestNegativeValidate(t *testing.T) {
-	sizeData := uint64(1235)
-	offset := uint64(123)
-	leafData := getLeafs(0, int(sizeData))
-	dealTree, err := merkletree.GrowTree(leafData)
-	assert.NoError(t, err)
-	comm := (*fr32.Fr32)(&dealTree.Leafs()[offset])
-	// We let the client segments be all the leafs
-	sizes := make([]uint64, sizeData)
-	for i := range sizes {
-		sizes[i] = 1
-	}
-	incTree, indexStart, err := MakeInclusionTree(dealTree.Leafs()[:sizeData], sizes, dealTree)
-	assert.NoError(t, err)
-	sizeDA := incTree.LeafCount()
-	subtreeProof, err := incTree.ConstructProof(incTree.Depth()-1, offset)
-	assert.NoError(t, err)
-	assert.NoError(t, VerifyInclusion(comm, (*fr32.Fr32)(incTree.Root()), subtreeProof))
-	proofDs, err := MakeIndexProof(incTree, offset, indexStart)
-	assert.NoError(t, err)
-	assert.NoError(t,
-		Validate(
-			comm, 1,
-			(*fr32.Fr32)(incTree.Root()), sizeDA,
-			subtreeProof, proofDs,
-		))
-
-	// Wrong sizeDs, should be 1
-	assert.Error(t,
-		Validate(
-			comm, 2,
-			(*fr32.Fr32)(incTree.Root()), sizeDA,
-			subtreeProof, proofDs,
-		))
-	// Wrong commitment for subtree, should be based on the deal leafs with offset
-	assert.Error(t,
-		Validate(
-			(*fr32.Fr32)(&dealTree.Leafs()[offset+1]), 1,
-			(*fr32.Fr32)(incTree.Root()), sizeDA,
-			subtreeProof, proofDs,
-		))
-	// Wrong number of leafs
-	assert.Error(t,
-		Validate(
-			comm, 1,
-			(*fr32.Fr32)(incTree.Root()), 10000,
-			subtreeProof, proofDs,
-		))
-	// Wrong index subtree
-	wrongProofDs, err := MakeIndexProof(incTree, offset, indexStart/2)
-	assert.NoError(t, err)
-	assert.Error(t,
-		Validate(
-			comm, 1,
-			(*fr32.Fr32)(incTree.Root()), sizeDA,
-			subtreeProof, wrongProofDs,
-		))
-	// Wrong index subtree offset
-	wrongProofDs2, err := MakeIndexProof(incTree, 42, indexStart)
-	assert.NoError(t, err)
-	assert.Error(t,
-		Validate(
-			comm, 1,
-			(*fr32.Fr32)(incTree.Root()), sizeDA,
-			subtreeProof, wrongProofDs2,
-		))
-	// Wrong root
-	assert.Error(t,
-		Validate(
-			comm, 1,
-			(*fr32.Fr32)(incTree.Node(1, 0)), sizeDA,
-			subtreeProof, proofDs,
-		))
-	// Wrong deal size
-	assert.Error(t,
-		Validate(
-			comm, 1,
-			(*fr32.Fr32)(incTree.Root()), 50000,
-			subtreeProof, proofDs,
-		), "original deal size: %d", sizeDA)
-	// Wrong subtree, not a leaf
-	wrongSubtreeProof, err := incTree.ConstructProof(incTree.Depth()-2, offset)
-	assert.NoError(t, err)
-	assert.Error(t,
-		Validate(
-			comm, 1,
-			(*fr32.Fr32)(incTree.Root()), sizeDA,
-			wrongSubtreeProof, proofDs,
-		))
+	assert.Equal(t, expectedAux, *newAux)
 }

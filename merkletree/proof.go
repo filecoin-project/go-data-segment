@@ -34,7 +34,6 @@ type ProofData struct {
 }
 
 // DeserializeProof deserializes a serialized proof
-// NOTE that correctness, nor the structure of the proof is NOT validated as part of this method
 func DeserializeProof(proof []byte) (ProofData, error) {
 	var res ProofData
 
@@ -49,7 +48,6 @@ func DeserializeProof(proof []byte) (ProofData, error) {
 }
 
 // Serialize serializes the proof into a byte slice
-// NOTE that correctness of the proof is NOT validated as part of this method
 func (d ProofData) Serialize() ([]byte, error) {
 	wb := new(bytes.Buffer)
 	d.MarshalCBOR(wb)
@@ -102,12 +100,12 @@ func (d ProofData) ComputeRoot(subtree *Node) (*Node, error) {
 	var index = d.index
 	var right = uint64(0)
 
-	for i := len(d.path) - 1; i >= 0; i-- {
+	for _, p := range d.path {
 		right, index = index&1, index>>1
 		if right == 1 {
-			carry = *computeNode(&d.path[i], &carry)
+			carry = *computeNode(&p, &carry)
 		} else {
-			carry = *computeNode(&carry, &d.path[i])
+			carry = *computeNode(&carry, &p)
 		}
 	}
 
