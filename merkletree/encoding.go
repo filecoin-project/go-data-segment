@@ -14,7 +14,7 @@ import (
 func (pd *ProofData) MarshalCBOR(w io.Writer) error {
 	var pds *ProofDataSerialization
 	if pd != nil {
-		pds = &ProofDataSerialization{Index: pd.index, Path: nodeArray{nodes: pd.path}}
+		pds = &ProofDataSerialization{Index: pd.Index, Path: nodeArray{nodes: pd.Path}}
 	}
 
 	return pds.MarshalCBOR(w)
@@ -28,8 +28,8 @@ func (nd *ProofData) UnmarshalCBOR(r io.Reader) error {
 		return err
 	}
 
-	nd.index = pds.Index
-	nd.path = pds.Path.nodes
+	nd.Index = pds.Index
+	nd.Path = pds.Path.nodes
 	return nil
 }
 

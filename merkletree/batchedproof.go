@@ -7,12 +7,12 @@ import (
 	xerrors "golang.org/x/xerrors"
 )
 
-// BatchedMerkleProof represents a Merkle proof of a sequence of leafs
-type BatchedMerkleProof interface {
+// BatchedProofData represents a Merkle proof of a sequence of leafs
+type BatchedProofData interface {
 	// LeftProof returns the underlying, full, proof of the left-most element proven in the batch
-	LeftProof() MerkleProof
+	LeftProof() ProofData
 	// RightProof returns the underlying, full, proof of the right-most element proven in the batch
-	RightProof() MerkleProof
+	RightProof() ProofData
 	// ValidateSequence ensures the correctness of the proof of a sequence of subtrees against the root of a Merkle tree
 	ValidateSequence(firstSubtree *Node, secondSubtree *Node, root *Node) bool
 	// ValidateLeafs ensures the correctness of the proof of a sequence of leafs against a Merkle tree.
@@ -20,7 +20,7 @@ type BatchedMerkleProof interface {
 	ValidateLeafs(leafs [][]byte, startIdx int, tree MerkleTree) bool
 }
 
-type BatchedProofFactory func() BatchedMerkleProof
+type BatchedProofFactory func() BatchedProofData
 
 type batchedProofData struct {
 	// leftPath contains the path needed to verify the left-most node only
@@ -40,15 +40,15 @@ type batchedProofData struct {
 	rightIdx uint64
 }
 
-func (b batchedProofData) LeftProof() MerkleProof {
+func (b batchedProofData) LeftProof() ProofData {
 	return b.getSubproof(b.leftPath, b.leftLvl, b.leftIdx)
 }
 
-func (b batchedProofData) RightProof() MerkleProof {
+func (b batchedProofData) RightProof() ProofData {
 	return b.getSubproof(b.rightPath, b.rightLvl, b.rightIdx)
 }
 
-func CreateBatchedProof(leftProof MerkleProof, rightProof MerkleProof) BatchedMerkleProof {
+func CreateBatchedProof(leftProof ProofData, rightProof MerkleProof) BatchedMerkleProof {
 	// Find common index by starting from the top of the tree and see where the proof-path diverge
 	minLength := util.Min(len(leftProof.Path()), len(rightProof.Path()))
 	var ctr int
@@ -77,7 +77,7 @@ func (b batchedProofData) ValidateSequence(leftSubtree *Node, rightSubtree *Node
 	return true
 }
 
-func (b batchedProofData) getSubproof(subPath []Node, lvl int, idx uint64) MerkleProof {
+func (b batchedProofData) getSubproof(subPath []Node, lvl int, idx uint64) ProofData {
 	// Reconstruct the full path
 	fullPath := make([]Node, len(b.commonPath)+len(subPath))
 	copy(fullPath, b.commonPath)
@@ -104,7 +104,7 @@ func (b batchedProofData) ValidateLeafs(leafs [][]byte, startIdx int, tree Merkl
 // The proof contains everything captured by the node in leftLvl level at index leftIdx up to and INCLUDING everything
 // contained by the node in rightLvl level and rightIdx index.
 // The root is in level 0 and the left-most node in a given level is indexed 0.
-func (d TreeData) ConstructBatchedProof(leftLvl int, leftIdx uint64, rightLvl int, rightIdx uint64) (BatchedMerkleProof, error) {
+func (d TreeData) ConstructBatchedProof(leftLvl int, leftIdx uint64, rightLvl int, rightIdx uint64) (BatchedProofData, error) {
 	if leftLvl < 1 || leftLvl >= d.Depth() || rightLvl < 1 || rightLvl >= d.Depth() {
 		return batchedProofData{}, xerrors.New("a level is either below 1 or bigger than the tree supports")
 	}

@@ -214,7 +214,7 @@ func (d TreeData) ConstructProof(lvl int, idx uint64) (*ProofData, error) {
 		proof[i], proof[j] = proof[j], proof[i]
 	}
 
-	return &ProofData{path: proof, index: idx}, nil
+	return &ProofData{Path: proof, Index: idx}, nil
 }
 
 // Serialize serializes the MerkleTree into a byte slice

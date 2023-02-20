@@ -2,8 +2,6 @@ package datasegment
 
 import (
 	"bytes"
-	"encoding/binary"
-	"errors"
 	"log"
 
 	"github.com/filecoin-project/go-data-segment/fr32"
@@ -35,37 +33,10 @@ type Inclusion struct {
 	Size int
 	// ProofSubtree is proof of inclusion of the client's data segment in the data aggregator's Merkle tree (includes position information)
 	// I.e. a proof that the root node of the subtree containing all the nodes (leafs) of a data segment is contained in CommDA
-	ProofSubtree merkletree.MerkleProof
+	ProofSubtree *merkletree.ProofData
 	// ProofDs is a proof that the user's data segment is contained in the index of the aggregator's deal.
 	// I.e. a proof that the data segment index constructed from the root of the user's data segment subtree is contained in the index of the deal tree.
-	ProofDs merkletree.MerkleProof
-}
-
-// SerializeInclusion encodes a data segment Inclusion into a byte array
-func SerializeInclusion(inclusion Inclusion) ([]byte, error) {
-	if !validateInclusionStructure(inclusion) {
-		return nil, errors.New("the structure is not valid")
-	}
-	buf := new(bytes.Buffer)
-	err := binary.Write(buf, binary.LittleEndian, inclusion.CommDA)
-	if err != nil {
-		log.Println("could not write the commitment")
-		return nil, err
-	}
-	err = binary.Write(buf, binary.LittleEndian, uint64(inclusion.Size))
-	if err != nil {
-		log.Println("could not write IndexSize")
-		return nil, err
-	}
-	err = serializeProof(buf, inclusion.ProofSubtree)
-	if err != nil {
-		return nil, err
-	}
-	err = serializeProof(buf, inclusion.ProofDs)
-	if err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
+	ProofDs *merkletree.ProofData
 }
 
 func validateInclusionStructure(structure Inclusion) bool {
@@ -74,75 +45,6 @@ func validateInclusionStructure(structure Inclusion) bool {
 		return false
 	}
 	return true
-}
-
-// DeserializeInclusion decodes a byte array into a data segment Inclusion
-func DeserializeInclusion(encoded []byte) (Inclusion, error) {
-	if len(encoded) < minSizeInclusion {
-		log.Println("no data segment inclusion encoded")
-		return Inclusion{}, errors.New("no data segment inclusion encoded")
-	}
-	ctr := 0
-	commDA := (*[fr32.BytesNeeded]byte)(encoded[ctr:fr32.BytesNeeded])
-	ctr += fr32.BytesNeeded
-	size := int(binary.LittleEndian.Uint64(encoded[ctr : ctr+BytesInInt]))
-	ctr += BytesInInt
-	if size <= 0 {
-		log.Println("IndexSize of aggregator's data must be positive")
-		return Inclusion{}, errors.New("size of aggregator's data must be positive")
-	}
-	subtreeProof, subtreeProofSize, err := deserializeProof(encoded[ctr:])
-	if err != nil || subtreeProofSize <= 0 {
-		return Inclusion{}, errors.New("no data segment inclusion encoded")
-	}
-	ctr += subtreeProofSize + BytesInInt
-	proofDs, dsProofSize, err := deserializeProof(encoded[ctr:])
-	if err != nil || dsProofSize <= 0 {
-		return Inclusion{}, errors.New("no data segment inclusion encoded")
-	}
-	inclusion := Inclusion{
-		CommDA:       *(*fr32.Fr32)(commDA),
-		Size:         size,
-		ProofSubtree: subtreeProof,
-		ProofDs:      proofDs,
-	}
-	if !validateInclusionStructure(inclusion) {
-		return Inclusion{}, errors.New("could not validate inclusion")
-	}
-	return inclusion, nil
-}
-
-func serializeProof(buf *bytes.Buffer, proof merkletree.MerkleProof) error {
-	encodedSubtree, err := proof.Serialize()
-	if err != nil {
-		log.Println("could not serialize the subtree proof")
-		return err
-	}
-	err = binary.Write(buf, binary.LittleEndian, uint64(len(encodedSubtree)))
-	if err != nil {
-		log.Println("could not encoded length of proof")
-		return err
-	}
-	err = binary.Write(buf, binary.LittleEndian, encodedSubtree)
-	if err != nil {
-		log.Println("could not encode proof")
-		return err
-	}
-	return nil
-}
-
-func deserializeProof(encoded []byte) (merkletree.MerkleProof, int, error) {
-	size := int(binary.LittleEndian.Uint64(encoded[:BytesInInt]))
-	if size <= 0 {
-		log.Printf("IndexSize has to be positive: %d\n", size)
-		return nil, -1, errors.New("size cannot be negative")
-	}
-	decoded, err := merkletree.DeserializeProof(encoded[BytesInInt : BytesInInt+size])
-	if err != nil {
-		log.Println("could not decode proof")
-		return nil, -1, err
-	}
-	return decoded, size, nil
 }
 
 // Validate verifies that the commitment to a user's data segment, commDs, is included correctly in the inclusion tree.
@@ -154,19 +56,19 @@ func deserializeProof(encoded []byte) (merkletree.MerkleProof, int, error) {
 // sizeDA is the amount of nodes included in the deal of the aggregator
 // segments is the number of client data segments included in the deal
 // proofSubtree is the proof that the client's
-func Validate(commDs *fr32.Fr32, sizeDs uint64, commDA *fr32.Fr32, sizeDA uint64, proofSubtree merkletree.MerkleProof, proofDs merkletree.MerkleProof) error {
+func Validate(commDs *fr32.Fr32, sizeDs uint64, commDA *fr32.Fr32, sizeDA uint64, proofSubtree merkletree.ProofData, proofDs merkletree.ProofData) error {
 	// Validate the whole subtree is actually included
 	if err := verifySegmentInclusion(sizeDA, sizeDs, proofSubtree); err != nil {
 		return xerrors.Errorf("verifySegmentInclusion: %w", err)
 	}
 	// Validate subtree inclusion
-	if err := VerifyInclusion(commDs, commDA, proofSubtree); err != nil {
+	if err := VerifyInclusion(commDs, commDA, &proofSubtree); err != nil {
 		return xerrors.Errorf("failed to verify inclusion of the subtree: %w", err)
 	}
 	// Compute how far to the leaf level in the inc tree we must go to find the first segment, being covered by proofSubtree
 	// The amount of levels in the inclusion tree is proofDs.Level() + 1 thus the amount of doubling of proofSubtree.Index()
 	// that is needed to get to the first leaf position is (proofDs.Level() + 1) - proofSubtree.Level()
-	leafIdx := uint64(proofSubtree.Index()) << ((proofDs.Depth() + 1) - proofSubtree.Depth())
+	leafIdx := uint64(proofSubtree.Index) << ((proofDs.Depth() + 1) - proofSubtree.Depth())
 	// TODO: segment size in bytes
 	index, err := MakeDataSegmentIdx(commDs, leafIdx*BytesInNode, sizeDs*BytesInNode)
 	if err != nil {
@@ -181,7 +83,7 @@ func Validate(commDs *fr32.Fr32, sizeDs uint64, commDA *fr32.Fr32, sizeDA uint64
 // verifySegmentInclusion checks that the proof subtree is actually of correct depth when taking into account the size
 // of the data segment.
 // TODO is this actually needed or implicitly assumed that the network checks the merkle tree is correct? Because we need more of the tree to validate this
-func verifySegmentInclusion(sizeDA uint64, sizeDs uint64, proof merkletree.MerkleProof) error {
+func verifySegmentInclusion(sizeDA uint64, sizeDs uint64, proof merkletree.ProofData) error {
 	proofLvl := proof.Depth()
 	// TODO validate that the deal containes the whole semgnet
 	// Compute the expected amount of leaf nodes
@@ -193,7 +95,7 @@ func verifySegmentInclusion(sizeDA uint64, sizeDs uint64, proof merkletree.Merkl
 }
 
 // VerifyInclusion validates a commitment, comm, in accordance to a proof to a root of a tree
-func VerifyInclusion(comm *fr32.Fr32, root *fr32.Fr32, proof merkletree.MerkleProof) error {
+func VerifyInclusion(comm *fr32.Fr32, root *fr32.Fr32, proof *merkletree.ProofData) error {
 	element := merkletree.Node(*comm)
 	rootNode := merkletree.Node(*root)
 	return proof.ValidateSubtree(&element, &rootNode)
@@ -205,7 +107,7 @@ func VerifyInclusion(comm *fr32.Fr32, root *fr32.Fr32, proof merkletree.MerklePr
 // sizeDA is the amount of 32 byte notes included in the entire deal
 // segments is the amount of client data segments included in the deal
 // proofDs is the Merkle proof of index inclusion in the inclusion tree to validate
-func VerifySegDescInclusion(segDesc *SegmentDesc, commDA *fr32.Fr32, sizeDA uint64, proofDs merkletree.MerkleProof) error {
+func VerifySegDescInclusion(segDesc *SegmentDesc, commDA *fr32.Fr32, sizeDA uint64, proofDs merkletree.ProofData) error {
 	if err := validateIndexTreePos(sizeDA, proofDs); err != nil {
 		return xerrors.Errorf("validate index tree position: %w", err)
 	}
@@ -216,7 +118,7 @@ func VerifySegDescInclusion(segDesc *SegmentDesc, commDA *fr32.Fr32, sizeDA uint
 	}
 	toHash := buf.Bytes()
 	comm := fr32.Fr32(*merkletree.TruncatedHash(toHash))
-	return VerifyInclusion(&comm, commDA, proofDs)
+	return VerifyInclusion(&comm, commDA, &proofDs)
 }
 
 // MakeInclusionTree constructs an inclusion tree based on the deal tree and a list of the nodes that contain all the client segments, returns also the starting offset of the index
@@ -256,7 +158,7 @@ func placeIndex(segments int, dataOnlySize uint64) (start uint64, size uint64) {
 // sizeDA is the amount of 32 byte nodes in the entire deal.
 // segments is the total amount of segments included in the deal
 // proofDs is the data segment index proof
-func validateIndexTreePos(sizeDA uint64, proofDs merkletree.MerkleProof) error {
+func validateIndexTreePos(sizeDA uint64, proofDs merkletree.ProofData) error {
 	// Validate the level in the index tree
 	// Check that the proof of the commitment is one level above the leafs, when levels are 0-indexed
 	if proofDs.Depth() != 1+util.Log2Ceil(sizeDA)-2 {

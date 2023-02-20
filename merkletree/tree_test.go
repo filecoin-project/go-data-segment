@@ -103,8 +103,8 @@ func TestConstructProof(t *testing.T) {
 	assert.NoError(t, err)
 
 	assert.Equal(t, proof.Depth(), util.Log2Ceil(uint64(tree.LeafCount())))
-	assert.Equal(t, proof.Index(), uint64(55))
-	assert.Equal(t, len(proof.Path()), tree.Depth()-1)
+	assert.Equal(t, proof.Index, uint64(55))
+	assert.Equal(t, len(proof.Path), tree.Depth()-1)
 }
 
 func TestValidateFromLeafs(t *testing.T) {

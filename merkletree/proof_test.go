@@ -94,7 +94,7 @@ func TestComputeRootTestVectors(t *testing.T) {
 	}
 
 	for i, testCase := range tt {
-		proofData := ProofData{path: testCase.path, index: testCase.index}
+		proofData := ProofData{Path: testCase.path, Index: testCase.index}
 		root, err := proofData.ComputeRoot(&testCase.subtree)
 		if testCase.err != "" {
 			assert.Error(t, err, "testcase %d", i)
@@ -135,10 +135,10 @@ func TestNegativeValidateLeaf(t *testing.T) {
 			for i := 0; i < NodeSize; i++ {
 				// Corrupt a bit in a node
 				// Note that modifying the most significant bits of the last byte will still result in failure even tough those bits should never be set
-				proof.Path()[currentLvl][i] ^= 0b10000000
+				proof.Path[currentLvl][i] ^= 0b10000000
 				assert.Error(t, proof.ValidateLeaf(getLeaf(t, 4), tree.Root()))
 				// Reset the proof
-				proof.Path()[currentLvl][i] ^= 0b10000000
+				proof.Path[currentLvl][i] ^= 0b10000000
 			}
 		}
 	}
@@ -177,26 +177,8 @@ func TestNegativeValidateSubtree(t *testing.T) {
 			proof, err := tree.ConstructProof(currentLvl, idx)
 			assert.NoError(t, err)
 			// Corrupt a bit in a node
-			proof.Path()[currentLvl/3][0] ^= 0b10000000
+			proof.Path[currentLvl/3][0] ^= 0b10000000
 			assert.Error(t, proof.ValidateSubtree(&tree.nodes[currentLvl][idx], tree.Root()))
 		}
 	}
-}
-
-func TestNegativeSerializationProofEmpty(t *testing.T) {
-	_, err := DeserializeProof(nil)
-	assert.Error(t, err)
-	_, err = DeserializeProof(make([]byte, 0))
-	assert.Error(t, err)
-}
-
-func TestNegativeSerializationProofWrongSize(t *testing.T) {
-	tree := getTree(t, 345)
-	proof, err := tree.ConstructProof(5, 12)
-	assert.NoError(t, err)
-	encoded, err := proof.Serialize()
-	assert.NoError(t, err)
-	// Incorrect size of proof
-	_, errDec := DeserializeProof(encoded[:2*BytesInInt+1])
-	assert.Error(t, errDec)
 }

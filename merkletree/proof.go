@@ -1,73 +1,21 @@
 package merkletree
 
 import (
-	"bytes"
 	"crypto/sha256"
 
 	"golang.org/x/xerrors"
 )
 
-// MerkleProof represents a Merkle proof to a single leaf in a Merkle tree
-type MerkleProof interface {
-	// Serialize serializes the proof into a byte slice
-	Serialize() ([]byte, error)
-	// Path returns the nodes in the proof, starting level 1 (the children of the root)
-	Path() []Node
-	// Depth returns how far into the tree given MerkleProof reaches
-	Depth() int
-	// Index returns the index of the node which the proof validates
-	// The left-most node in a given level is 0
-	Index() uint64
-	// ValidateLeaf ensures the correctness of the proof of a leaf against the root of a Merkle tree
-	ValidateLeaf(leafs []byte, root *Node) error
-	// ValidateSubtree ensures the correctness of the proof of a subtree against the root of a Merkle tree
-	ValidateSubtree(subtree *Node, root *Node) error
-	// ComputeRoot computes the root of a tree given given node at the end of the path.
-	ComputeRoot(subtree *Node) (*Node, error)
-}
-
 type ProofData struct {
-	path []Node
+	Path []Node
 	// index indicates the index within the level where the element whose membership to prove is located
 	// Leftmost node is index 0
-	index uint64
-}
-
-// DeserializeProof deserializes a serialized proof
-func DeserializeProof(proof []byte) (ProofData, error) {
-	var res ProofData
-
-	if err := res.UnmarshalCBOR(bytes.NewReader(proof)); err != nil {
-		return ProofData{}, xerrors.Errorf("decoding proof")
-	}
-
-	if err := res.validateProofStructure(); err != nil {
-		return ProofData{}, xerrors.Errorf("the data does not contain a valid proof: %w", err)
-	}
-	return res, nil
-}
-
-// Serialize serializes the proof into a byte slice
-func (d ProofData) Serialize() ([]byte, error) {
-	wb := new(bytes.Buffer)
-	d.MarshalCBOR(wb)
-	return wb.Bytes(), nil
-}
-
-// Path returns the nodes in the path of the proof.
-// The first node, is in level 1. I.e. the level below the root
-func (d ProofData) Path() []Node {
-	return d.path
+	Index uint64
 }
 
 // Depth returns the level in the tree which the node this proof validates is located
 func (d ProofData) Depth() int {
-	return len(d.path)
-}
-
-// Index returns the index of the node this proof validates, within the level returned by Level()
-func (d ProofData) Index() uint64 {
-	return d.index
+	return len(d.Path)
 }
 
 // ValidateLeaf validates that the data given as input is contained in a Merkle tree with a specific root
@@ -92,15 +40,15 @@ func (d ProofData) ComputeRoot(subtree *Node) (*Node, error) {
 	if d.Depth() > 63 {
 		return nil, xerrors.Errorf("merkleproofs with depths greater than 63 are not supported")
 	}
-	if d.index>>d.Depth() != 0 {
+	if d.Index>>d.Depth() != 0 {
 		return nil, xerrors.Errorf("index greater than width of the tree")
 	}
 
 	var carry Node = *subtree
-	var index = d.index
+	var index = d.Index
 	var right = uint64(0)
 
-	for _, p := range d.path {
+	for _, p := range d.Path {
 		right, index = index&1, index>>1
 		if right == 1 {
 			carry = *computeNode(&p, &carry)

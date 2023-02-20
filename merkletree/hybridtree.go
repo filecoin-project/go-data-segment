@@ -45,14 +45,14 @@ func (ht Hybrid) CollectProof(level int, idx uint64) (ProofData, error) {
 	}
 
 	var res ProofData
-	res.index = idx
+	res.Index = idx
 	for l := level; l < ht.MaxLevel(); l++ {
 		n, err := ht.GetNode(l, idx^1) // idx^1 is the sybling index
 		if err != nil {
 			return ProofData{}, xerrors.Errorf("collecting proof: %w", err)
 		}
 		idx /= 2
-		res.path = append(res.path, n)
+		res.Path = append(res.Path, n)
 	}
 
 	return res, nil

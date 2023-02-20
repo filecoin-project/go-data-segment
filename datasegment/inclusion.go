@@ -70,7 +70,7 @@ func (ip InclusionProof) ComputeExpectedAuxData(veriferData InclusionVerifierDat
 	assumedSizePa := abi.PaddedPieceSize((1 << ip.ProofSubtree.Depth()) * veriferData.SizePc)
 	// TODO: check overflow
 	// inclusion proof verification checks that index is less than the 1<<(path length)
-	dataOffset := ip.ProofSubtree.Index() * uint64(veriferData.SizePc)
+	dataOffset := ip.ProofSubtree.Index * uint64(veriferData.SizePc)
 
 	en, err := MakeDataSegmentIndexEntry((*fr32.Fr32)(nodeCommPc), dataOffset, uint64(veriferData.SizePc))
 	if err != nil {
@@ -92,9 +92,9 @@ func (ip InclusionProof) ComputeExpectedAuxData(veriferData InclusionVerifierDat
 	}
 	idxStart := indexAreaStart(assumedSizePa2)
 	// TODO: check overflow?
-	if ip.ProofIndex.Index()*uint64(EntrySize) < idxStart {
+	if ip.ProofIndex.Index*uint64(EntrySize) < idxStart {
 		return nil, xerrors.Errorf("index entry at wrong position: %d < %d",
-			ip.ProofIndex.Index()*uint64(EntrySize), idxStart)
+			ip.ProofIndex.Index*uint64(EntrySize), idxStart)
 	}
 
 	cidPa, err := commcid.PieceCommitmentV1ToCID(assumedCommPa[:])
