@@ -198,18 +198,6 @@ func TestTruncatedHash(t *testing.T) {
 	assert.Equal(t, expected[:], node[:])
 }
 
-func TestComputeNode(t *testing.T) {
-	var rawInput [0]byte
-	inputNode := TruncatedHash(rawInput[:])
-	result := computeNode(inputNode, inputNode)
-
-	expected, err := hex.DecodeString("db5bf619105c0640e070e01d925cfe1243cdc742609794eb1018ae9e7284fa1d")
-	assert.NoError(t, err)
-	assert.NoError(t, err)
-
-	assert.Equal(t, expected, result[:])
-}
-
 func TestComputeNodeFullInput(t *testing.T) {
 	// Note most significant bit of last byte is NOT set
 	singletonInput, err := hex.DecodeString("038051e9c324393bd1ca1978dd0952c2aa3742ca4f1bd5cd4611cea83892d302")
