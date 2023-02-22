@@ -19,7 +19,7 @@ import (
 // but potentially with some empty leafs (to the right) in case the amount of data segments in the deal tree is not a 2-power
 
 // BytesInInt represents the amount of bytes used to encode an int
-const BytesInInt int = 64 / 8
+const BytesInInt = 64 / 8
 const BytesInNode = fr32.BytesNeeded
 
 // 3 integers includes the IndexSize of the aggregator's data and the size of the two Merkle proofs
@@ -74,7 +74,7 @@ func Validate(commDs *fr32.Fr32, sizeDs uint64, commDA *fr32.Fr32, sizeDA uint64
 	if err != nil {
 		return xerrors.Errorf("making data-segment index entry: %w", err)
 	}
-	if err := VerifySegDescInclusion(index, commDA, sizeDA, proofDs); err != nil {
+	if err := VerifySegDescInclusion(&index, commDA, sizeDA, proofDs); err != nil {
 		return xerrors.Errorf("veriying segment descriptor inclusion: %w", err)
 	}
 	return nil

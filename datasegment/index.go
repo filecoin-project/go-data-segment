@@ -3,6 +3,7 @@ package datasegment
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding"
 	"encoding/binary"
 	"errors"
 	"log"
@@ -10,14 +11,29 @@ import (
 	"github.com/filecoin-project/go-data-segment/fr32"
 	"github.com/filecoin-project/go-data-segment/merkletree"
 	"github.com/filecoin-project/go-data-segment/util"
+	commcid "github.com/filecoin-project/go-fil-commcid"
 	"github.com/filecoin-project/go-state-types/abi"
+	cid "github.com/ipfs/go-cid"
 	"golang.org/x/xerrors"
 )
 
-const BytesInChecksum int = 16
+type validationError string
+
+var ErrValidation = validationError("unknown")
+
+func (ve validationError) Error() string {
+	return string(ve)
+}
+
+func (ve validationError) Is(err error) bool {
+	_, ok := err.(validationError)
+	return ok
+}
+
+const ChecksumSize = 16
 
 const minIndexSize int = BytesInInt + EntrySize
-const EntrySize int = fr32.BytesNeeded + 2*BytesInInt + BytesInChecksum
+const EntrySize = merkletree.NodeSize + 2*BytesInInt + ChecksumSize
 
 // MaxIndexEntriesInDeal defines the maximum number of index entries in for a given size of a deal
 func MaxIndexEntriesInDeal(dealSize abi.PaddedPieceSize) uint {
@@ -71,53 +87,171 @@ func (i IndexData) SegmentDesc(index int) *SegmentDesc {
 	return &i.Entries[index]
 }
 
+var _ encoding.BinaryMarshaler = IndexData{}
+var _ encoding.BinaryUnmarshaler = (*IndexData)(nil)
+
+func (id IndexData) MarshalBinary() (data []byte, err error) {
+	res := make([]byte, EntrySize*len(id.Entries))
+	for i, r := range id.Entries {
+		r.SerializeFr32Into(res[i*EntrySize : (i+1)*EntrySize])
+	}
+	return res, nil
+}
+
+func (id *IndexData) UnmarshalBinary(data []byte) error {
+	if rem := len(data) % EntrySize; rem != 0 {
+		return xerrors.Errorf("data to unmarshal is not a multiple of EntrySize: %d % %d != 0 (%d)",
+			len(data), EntrySize, rem)
+	}
+
+	*id = IndexData{}
+	id.Entries = make([]SegmentDesc, len(data)/EntrySize)
+	for i := 0; i < len(id.Entries); i++ {
+		err := id.Entries[i].UnmarshalBinary(data[i*EntrySize : (i+1)*EntrySize])
+		if err != nil {
+			return xerrors.Errorf("unamrshaling entry at index %d: %w", i, err)
+		}
+	}
+	return nil
+}
+
+func (id IndexData) Validate() error {
+	for i, e := range id.Entries {
+		if err := e.Validate(); err != nil {
+			return xerrors.Errorf("entry at index %d failed validation: %w", i, err)
+		}
+	}
+	return nil
+}
+
+// ValidEntries returns a slice of entries in the index which pass validation checks
+func (id IndexData) ValidEntries() ([]SegmentDesc, error) {
+	res := []SegmentDesc{}
+	for i, e := range id.Entries {
+
+		if err := e.Validate(); err != nil {
+			if errors.Is(err, ErrValidation) {
+				continue
+			} else {
+				return nil, xerrors.Errorf("got unknown error for entry %d: %w", i, err)
+			}
+		}
+		res = append(res, e)
+	}
+	return res, nil
+}
+
 // SegmentDesc contains a data segment description to be contained as two Fr32 elements in 2 leaf nodes of the data segment index
 type SegmentDesc struct {
 	// Commitment to the data segment (Merkle node which is the root of the subtree containing all the nodes making up the data segment)
 	CommDs merkletree.Node
-	// Offset the first leaf which contains this data segment, thus multiplying with 32 indicates how many bytes into the deal this client's data segment starts. 0-indexed.
+	// Ofset is the offset from the start of the deal in padded units
 	Offset uint64
-	// Size is the amount of 32-byte nodes (leafs) that is contained in the deal reflected by the SegmentDesc
+	// Size is the number of padded bytes that is contained in the sub-deal reflected by the SegmentDesc
 	Size uint64
 	// Checksum is a 126 bit checksum (SHA256) computes on CommDs || Offset || Size
-	Checksum [BytesInChecksum]byte
+	Checksum [ChecksumSize]byte
 }
 
-func (sdi SegmentDesc) computeChecksum() [BytesInChecksum]byte {
-	sdiCopy := sdi
-	sdiCopy.Checksum = [BytesInChecksum]byte{}
+// DataCid returns the PieceCID of the sub-deal
+func (sd SegmentDesc) DataCid() cid.Cid {
+	c, err := commcid.PieceCommitmentV1ToCID(sd.CommDs[:])
+	if err != nil {
+		panic("CommDs is always 32 bytes: " + err.Error())
+	}
+	return c
+}
 
-	toHash := sdiCopy.SerializeFr32()
+// UnpaddedOffest returns unpadded offset relative of the sub-deal relative to the deal start
+func (sd SegmentDesc) UnpaddedOffest() uint64 {
+	return sd.Offset / 128 * 127
+}
+
+// UnpaddedLength returns unpadded length of the sub-deal
+func (sd SegmentDesc) UnpaddedLength() uint64 {
+	return sd.Size / 128 * 127
+}
+
+func (sd SegmentDesc) computeChecksum() [ChecksumSize]byte {
+	sdCopy := sd
+	sdCopy.Checksum = [ChecksumSize]byte{}
+
+	toHash := sdCopy.SerializeFr32()
 	digest := sha256.Sum256(toHash)
-	res := digest[:BytesInChecksum]
-	// Reduce the size to 126 bits
-	res[BytesInChecksum-1] &= 0b00111111
-	return *(*[BytesInChecksum]byte)(res)
+	res := digest[:ChecksumSize]
+	// Truncate to  126 bits
+	res[ChecksumSize-1] &= 0b00111111
+	return *(*[ChecksumSize]byte)(res)
 }
 
-func (sdi SegmentDesc) SerializeFr32() []byte {
-	res := make([]byte, 0, EntrySize)
-	res = sdi.SerializeFr32Into(res)
+func (sd SegmentDesc) withUpdatedChecksum() SegmentDesc {
+	sd.Checksum = sd.computeChecksum()
+	return sd
+}
 
+var _ encoding.BinaryMarshaler = SegmentDesc{}
+var _ encoding.BinaryUnmarshaler = (*SegmentDesc)(nil)
+
+func (sd SegmentDesc) MarshalBinary() ([]byte, error) {
+	return sd.SerializeFr32(), nil
+}
+
+func (sd *SegmentDesc) UnmarshalBinary(data []byte) error {
+	if len(data) != EntrySize {
+		return xerrors.Errorf("invalid segment description size")
+	}
+	le := binary.LittleEndian
+
+	*sd = SegmentDesc{}
+	sd.CommDs = *(*merkletree.Node)(data)
+	sd.Offset = le.Uint64(data[merkletree.NodeSize:])
+	sd.Size = le.Uint64(data[merkletree.NodeSize+8:])
+	sd.Checksum = *(*[ChecksumSize]byte)(data[merkletree.NodeSize+8+8:])
+
+	if len(data[merkletree.NodeSize+8+8+ChecksumSize:]) != 0 {
+		panic("sanity check, should have consumed all")
+	}
+
+	return nil
+}
+
+func (sd SegmentDesc) SerializeFr32() []byte {
+	res := make([]byte, EntrySize)
+	sd.SerializeFr32Into(res)
 	return res
 }
 
-func (sdi SegmentDesc) SerializeFr32Into(slice []byte) []byte {
-	le := binary.LittleEndian
+// SerializeFr32Into serializes the Segment Desctipion into given slice
+// Panics if len(slice) < EntrySize
+func (sd SegmentDesc) SerializeFr32Into(slice []byte) {
+	_ = slice[EntrySize-1]
 
-	slice = append(slice, sdi.CommDs[:]...)
-	slice = le.AppendUint64(slice, sdi.Offset)
-	slice = le.AppendUint64(slice, sdi.Size)
-	slice = append(slice, sdi.Checksum[:]...)
-	return slice
+	le := binary.LittleEndian
+	copy(slice, sd.CommDs[:])
+	le.PutUint64(slice[merkletree.NodeSize:], sd.Offset)
+	le.PutUint64(slice[merkletree.NodeSize+8:], sd.Size)
+	copy(slice[merkletree.NodeSize+16:], sd.Checksum[:])
 }
 
-func (sdi SegmentDesc) IntoNodes() [2]merkletree.Node {
-	res := sdi.SerializeFr32()
+func (sd SegmentDesc) IntoNodes() [2]merkletree.Node {
+	res := sd.SerializeFr32()
 	return [2]merkletree.Node{
 		*(*merkletree.Node)(res[:merkletree.NodeSize]),
 		*(*merkletree.Node)(res[merkletree.NodeSize:]),
 	}
+}
+
+func (sd SegmentDesc) Validate() error {
+	if sd.computeChecksum() != sd.Checksum {
+		return validationError("computed checksum does not match embedded checksum")
+	}
+	if sd.Offset%128 != 0 {
+		return validationError("offset is not aligned in unpadded data")
+	}
+	if sd.Size%128 != 0 {
+		return validationError("size is not aligned in unpadded data")
+	}
+	return nil
 }
 
 // ==============================
@@ -133,17 +267,17 @@ func (ds SegmentDesc) MakeNode() (merkletree.Node, merkletree.Node, error) {
 	node2 := *(*merkletree.Node)(data[fr32.BytesNeeded:])
 	return node1, node2, nil
 }
-func MakeDataSegmentIdxWithChecksum(commDs *fr32.Fr32, offset uint64, size uint64, checksum *[BytesInChecksum]byte) (*SegmentDesc, error) {
+func MakeDataSegmentIdxWithChecksum(commDs *fr32.Fr32, offset uint64, size uint64, checksum *[ChecksumSize]byte) (SegmentDesc, error) {
 	en := SegmentDesc{
 		CommDs:   *(*merkletree.Node)(commDs),
 		Offset:   offset,
 		Size:     size,
 		Checksum: *checksum,
 	}
-	if err := validateEntry(&en); err != nil {
-		return nil, xerrors.Errorf("input does not form a valid SegmentDesc: %w", err)
+	if err := en.Validate(); err != nil {
+		return SegmentDesc{}, xerrors.Errorf("input does not form a valid SegmentDesc: %w", err)
 	}
-	return &en, nil
+	return en, nil
 }
 
 func MakeDataSegmentIndexEntry(CommP *fr32.Fr32, offset uint64, size uint64) (*SegmentDesc, error) {
@@ -151,24 +285,24 @@ func MakeDataSegmentIndexEntry(CommP *fr32.Fr32, offset uint64, size uint64) (*S
 		CommDs:   *(*merkletree.Node)(CommP),
 		Offset:   offset,
 		Size:     size,
-		Checksum: [BytesInChecksum]byte{},
+		Checksum: [ChecksumSize]byte{},
 	}
 	en.Checksum = en.computeChecksum()
 	return &en, nil
 }
 
-func MakeDataSegmentIdx(commDs *fr32.Fr32, offset uint64, size uint64) (*SegmentDesc, error) {
+func MakeDataSegmentIdx(commDs *fr32.Fr32, offset uint64, size uint64) (SegmentDesc, error) {
 	checksum, err := computeChecksum((*merkletree.Node)(commDs), offset, size)
 	if err != nil {
 		log.Println("could not compute checksum")
-		return nil, err
+		return SegmentDesc{}, err
 	}
 	return MakeDataSegmentIdxWithChecksum(commDs, offset, size, checksum)
 }
 
 func MakeSegDescs(segments []merkletree.Node, segmentSizes []uint64) ([]merkletree.Node, error) {
 	if len(segments) != len(segmentSizes) {
-		return nil, errors.New("number of segment roots and segment sizes has to match")
+		return nil, xerrors.New("number of segment roots and segment sizes has to match")
 	}
 	res := make([]merkletree.Node, 2*len(segments))
 	curOffset := uint64(0)
@@ -260,8 +394,8 @@ func deserializeFr32Entry(encoded []byte) (*SegmentDesc, error) {
 	ctr += BytesInInt
 	size := binary.LittleEndian.Uint64(encoded[ctr : ctr+BytesInInt])
 	ctr += BytesInInt
-	checksum := *(*[BytesInChecksum]byte)(encoded[ctr : ctr+BytesInChecksum])
-	ctr += BytesInChecksum
+	checksum := *(*[ChecksumSize]byte)(encoded[ctr : ctr+ChecksumSize])
+	ctr += ChecksumSize
 	en := SegmentDesc{
 		CommDs:   *(*merkletree.Node)(commDs),
 		Offset:   offset,
@@ -298,7 +432,7 @@ func validateEntry(en *SegmentDesc) error {
 
 }
 
-func computeChecksum(commDs *merkletree.Node, offset uint64, size uint64) (*[BytesInChecksum]byte, error) {
+func computeChecksum(commDs *merkletree.Node, offset uint64, size uint64) (*[ChecksumSize]byte, error) {
 
 	buf := new(bytes.Buffer)
 	tempEntry := SegmentDesc{
@@ -315,13 +449,13 @@ func computeChecksum(commDs *merkletree.Node, offset uint64, size uint64) (*[Byt
 	// We want to hash the SegmentDesc, excluding the computeChecksum as it is what we are trying to compute
 	toHash := buf.Bytes()[:EntrySize]
 	digest := sha256.Sum256(toHash)
-	res := digest[:BytesInChecksum]
+	res := digest[:ChecksumSize]
 	// Reduce the size to 126 bits
-	res[BytesInChecksum-1] &= 0b00111111
-	if *(*[BytesInChecksum]byte)(res) != checkSum {
+	res[ChecksumSize-1] &= 0b00111111
+	if *(*[ChecksumSize]byte)(res) != checkSum {
 		panic("wrong checksum")
 	}
-	return (*[BytesInChecksum]byte)(res), nil
+	return (*[ChecksumSize]byte)(res), nil
 }
 
 func validateChecksum(en *SegmentDesc) (bool, error) {
