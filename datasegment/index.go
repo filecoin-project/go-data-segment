@@ -153,8 +153,8 @@ type SegmentDesc struct {
 	Checksum [ChecksumSize]byte
 }
 
-// DataCid returns the PieceCID of the sub-deal
-func (sd SegmentDesc) DataCid() cid.Cid {
+// PieceCID returns the PieceCID of the sub-deal
+func (sd SegmentDesc) PieceCID() cid.Cid {
 	c, err := commcid.PieceCommitmentV1ToCID(sd.CommDs[:])
 	if err != nil {
 		panic("CommDs is always 32 bytes: " + err.Error())
