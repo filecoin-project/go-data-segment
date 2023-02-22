@@ -164,12 +164,12 @@ func (sd SegmentDesc) PieceCID() cid.Cid {
 
 // UnpaddedOffest returns unpadded offset relative of the sub-deal relative to the deal start
 func (sd SegmentDesc) UnpaddedOffest() uint64 {
-	return sd.Offset / 128 * 127
+	return sd.Offset - sd.Offset/128
 }
 
 // UnpaddedLength returns unpadded length of the sub-deal
 func (sd SegmentDesc) UnpaddedLength() uint64 {
-	return sd.Size / 128 * 127
+	return sd.Size - sd.Size/128
 }
 
 func (sd SegmentDesc) computeChecksum() [ChecksumSize]byte {

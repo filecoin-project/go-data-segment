@@ -14,8 +14,7 @@ import (
 func DataSegmentIndexStartOffset(dealSize abi.PaddedPieceSize) uint64 {
 	mie := MaxIndexEntriesInDeal(dealSize)
 	fromBack := uint64(mie) * uint64(EntrySize)
-	fromBack = fromBack / 128 // safe because EntrySize = 64 and min(MaxIndexEntriesInDeal(x)) = 4
-	fromBack = 127 * fromBack
+	fromBack = fromBack - fromBack/128 // safe because EntrySize = 64 and min(MaxIndexEntriesInDeal(x)) = 4
 	return uint64(dealSize.Unpadded()) - fromBack
 }
 
