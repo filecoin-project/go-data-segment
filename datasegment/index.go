@@ -144,9 +144,9 @@ func (id IndexData) ValidEntries() ([]SegmentDesc, error) {
 type SegmentDesc struct {
 	// Commitment to the data segment (Merkle node which is the root of the subtree containing all the nodes making up the data segment)
 	CommDs merkletree.Node
-	// Ofset is the offset from the start of the deal in padded units
+	// Ofset is the offset from the start of the deal in padded bytes
 	Offset uint64
-	// Size is the number of padded bytes that is contained in the sub-deal reflected by the SegmentDesc
+	// Size is the number of padded bytes that is contained in the sub-deal reflected by this SegmentDesc
 	Size uint64
 	// Checksum is a 126 bit checksum (SHA256) computes on CommDs || Offset || Size
 	Checksum [ChecksumSize]byte

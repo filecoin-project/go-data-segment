@@ -84,7 +84,7 @@ func (d Deal) PieceCID() (cid.Cid, error) {
 }
 
 func (d Deal) indexLoc() merkletree.Location {
-	level := util.Log2Ceil(2 * uint64(MaxIndexEntriesInDeal(d.DealSize)))
+	level := util.Log2Ceil(EntrySize / merkletree.NodeSize * uint64(MaxIndexEntriesInDeal(d.DealSize)))
 	index := uint64(1)<<level - 1
 	return merkletree.Location{Level: level, Index: index}
 }
