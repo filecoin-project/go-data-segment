@@ -1,7 +1,6 @@
 package merkletree
 
 import (
-	"github.com/filecoin-project/go-data-segment/util"
 	"golang.org/x/xerrors"
 )
 
@@ -14,6 +13,16 @@ type Hybrid struct {
 	// Level N is at: [2^(log2Leafs-level):2^(log2Leafs-level+1)]
 	data      SparseArray[Node]
 	log2Leafs int
+}
+
+type Location struct {
+	Level int
+	Index uint64
+}
+
+func (l Location) OffsetAtLeaf() uint64 {
+	// TODO maybe bounds check
+	return l.Index << l.Level
 }
 
 func NewHybrid(log2Leafs int) (Hybrid, error) {
@@ -33,7 +42,7 @@ func (ht Hybrid) MaxLevel() int {
 func (ht Hybrid) Root() Node {
 	n, err := ht.GetNode(ht.MaxLevel(), 0)
 	if err != nil {
-		panic(err)
+		panic("unexpected: " + err.Error())
 	}
 	return n
 }
@@ -153,41 +162,15 @@ func (ht *Hybrid) SetNode(level int, idx uint64, n *Node) error {
 	return nil
 }
 
-type DealInfo struct {
+type CommAndLoc struct {
 	Comm Node
-	Size uint64
-
-	Placed bool
-	Level  int
-	Index  uint64
+	Loc  Location
 }
 
-// ComputeDealPlacement takes in DealInfos with Comm and Size,
-// computes their placement in the tree and modifies DealInfos with Level and Index information.
-// Reeturns number of bytes required and any errors
-func ComputeDealPlacement(dealInfos []DealInfo) (uint64, error) {
-	offset := uint64(0)
-	for i := range dealInfos {
-		di := &dealInfos[i]
-		sizeInNodes := uint64(di.Size) / NodeSize
-		di.Placed = true
-		di.Level = util.Log2Ceil(sizeInNodes)               // level is log2(sizeInNodes)
-		di.Index = (offset + sizeInNodes - 1) / sizeInNodes // idx is ceil(offset/sizeInNodes)
-		offset = (di.Index + 1) * sizeInNodes               // select the next index at ni.lvl and go back to nodewise
-	}
-	return offset, nil
-}
-
-// PlaceDeals takes DealInfos and places them within the hybrid tree.
-func PlaceDeals(ht *Hybrid, dealInfos []DealInfo) error {
-	for i, di := range dealInfos {
-		if !di.Placed {
-			return xerrors.Errorf("deal at index %d is not placed", i)
-		}
-
-		err := ht.SetNode(di.Level, di.Index, &di.Comm)
-		if err != nil {
-			return xerrors.Errorf("setting node for deal at index %d failed: %w", i, err)
+func (ht *Hybrid) BatchSet(vals []CommAndLoc) error {
+	for i, v := range vals {
+		if err := ht.SetNode(v.Loc.Level, v.Loc.Index, &v.Comm); err != nil {
+			return xerrors.Errorf("failed setting, index in batch %d, val: %v: %w", i, v, err)
 		}
 	}
 	return nil

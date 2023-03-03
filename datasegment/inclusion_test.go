@@ -42,32 +42,41 @@ func commForDeal(x int) merkletree.Node {
 	return res
 }
 
-func buildDealTree(t *testing.T, containerSize abi.PaddedPieceSize, dealSizes []uint64) (*merkletree.Hybrid, []merkletree.DealInfo) {
+func cidForDeal(x int) cid.Cid {
+	n := commForDeal(x)
+	c, err := commcid.PieceCommitmentV1ToCID(n[:])
+	if err != nil {
+		panic(err)
+	}
+	return c
+}
+
+func buildDealTree(t *testing.T, containerSize abi.PaddedPieceSize, dealSizes []uint64) (*merkletree.Hybrid, []merkletree.CommAndLoc) {
 	ht, err := merkletree.NewHybrid(util.Log2Ceil(uint64(containerSize / merkletree.NodeSize)))
 	require.NoError(t, err)
 	require.NotNil(t, ht)
 
-	dealInfos := make([]merkletree.DealInfo, 0, len(dealSizes))
+	dealInfos := make([]abi.PieceInfo, 0, len(dealSizes))
 	for i, ds := range dealSizes {
-		dealInfos = append(dealInfos, merkletree.DealInfo{
-			Comm: commForDeal(i),
-			Size: ds,
+		dealInfos = append(dealInfos, abi.PieceInfo{
+			PieceCID: cidForDeal(i),
+			Size:     abi.PaddedPieceSize(ds),
 		})
 	}
 
-	totalSize, err := merkletree.ComputeDealPlacement(dealInfos)
+	col, totalSize, err := ComputeDealPlacement(dealInfos)
 	require.NoError(t, err)
 	assert.LessOrEqual(t, totalSize, containerSize)
-	err = merkletree.PlaceDeals(&ht, dealInfos)
+	err = ht.BatchSet(col)
 	require.NoError(t, err)
 
-	return &ht, dealInfos
+	return &ht, col
 }
 func TestComputeExpectedAuxData1(t *testing.T) {
 	var SizePa abi.PaddedPieceSize = 32 << 30
-	ht, dealInfos := buildDealTree(t, SizePa, sampleSizes1)
+	ht, col := buildDealTree(t, SizePa, sampleSizes1)
 
-	index, err := MakeIndexFromDealInfos(dealInfos)
+	index, err := MakeIndexFromCommLoc(col)
 
 	require.NoError(t, err)
 	indexStartNodes := indexAreaStart(SizePa) / merkletree.NodeSize
@@ -88,7 +97,7 @@ func TestComputeExpectedAuxData1(t *testing.T) {
 		SizePa: SizePa,
 	}
 
-	for i, di := range dealInfos {
+	for i, di := range col {
 		ip, err := CollectInclusionProof(ht, di, i)
 		require.NoError(t, err)
 		require.NotNil(t, ip)
@@ -97,7 +106,7 @@ func TestComputeExpectedAuxData1(t *testing.T) {
 		assert.NoError(t, err)
 		verifData := InclusionVerifierData{
 			CommPc: CommPc,
-			SizePc: abi.PaddedPieceSize(di.Size),
+			SizePc: abi.PaddedPieceSize(1 << di.Loc.Level * merkletree.NodeSize),
 		}
 		if i == 3 && false {
 			fmt.Printf("verifData := %#v\n", verifData.CommPc.Bytes())
@@ -112,7 +121,7 @@ func TestComputeExpectedAuxData1(t *testing.T) {
 
 		newAux, err := ip.ComputeExpectedAuxData(verifData)
 		assert.NoError(t, err)
-		assert.Equal(t, expectedAuxData, *newAux)
+		assert.Equal(t, &expectedAuxData, newAux)
 	}
 }
 

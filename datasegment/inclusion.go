@@ -80,7 +80,7 @@ func (ip InclusionProof) ComputeExpectedAuxData(veriferData InclusionVerifierDat
 	enNode := merkletree.TruncatedHash(en.SerializeFr32())
 
 	assumedCommPa2, err := ip.ProofIndex.ComputeRoot(enNode)
-	if *assumedCommPa2 != *assumedCommPa {
+	if *assumedCommPa != *assumedCommPa2 {
 		return nil, xerrors.Errorf("aggregator's data commiements don't match: %x != %x", assumedCommPa, assumedCommPa2)
 	}
 
@@ -108,8 +108,8 @@ func (ip InclusionProof) ComputeExpectedAuxData(veriferData InclusionVerifierDat
 	}, nil
 }
 
-func CollectInclusionProof(ht *merkletree.Hybrid, dealInfo merkletree.DealInfo, indexEntry int) (*InclusionProof, error) {
-	subTreeProof, err := ht.CollectProof(dealInfo.Level, dealInfo.Index)
+func CollectInclusionProof(ht *merkletree.Hybrid, dealInfo merkletree.CommAndLoc, indexEntry int) (*InclusionProof, error) {
+	subTreeProof, err := ht.CollectProof(dealInfo.Loc.Level, dealInfo.Loc.Index)
 	if err != nil {
 		return nil, xerrors.Errorf("collecting subtree proof: %w", err)
 	}

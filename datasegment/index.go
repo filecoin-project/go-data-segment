@@ -32,7 +32,6 @@ func (ve validationError) Is(err error) bool {
 
 const ChecksumSize = 16
 
-const minIndexSize int = BytesInInt + EntrySize
 const EntrySize = merkletree.NodeSize + 2*BytesInInt + ChecksumSize
 
 // MaxIndexEntriesInDeal defines the maximum number of index entries in for a given size of a deal
@@ -58,13 +57,13 @@ func MakeIndex(entries []SegmentDesc) (*IndexData, error) {
 	return &index, nil
 }
 
-func MakeIndexFromDealInfos(dealInfos []merkletree.DealInfo) (*IndexData, error) {
+func MakeIndexFromCommLoc(dealInfos []merkletree.CommAndLoc) (*IndexData, error) {
 	entries := make([]SegmentDesc, 0, len(dealInfos))
 	for _, di := range dealInfos {
 		sd := SegmentDesc{
 			CommDs: di.Comm,
-			Offset: di.Index * di.Size,
-			Size:   di.Size,
+			Offset: di.Loc.OffsetAtLeaf() * merkletree.NodeSize,
+			Size:   1 << di.Loc.Level * merkletree.NodeSize,
 		}
 		sd.Checksum = sd.computeChecksum()
 		entries = append(entries, sd)
