@@ -159,7 +159,7 @@ type zeroReader struct{}
 
 var _ io.Reader = zeroReader{}
 
-func (_ zeroReader) Read(b []byte) (int, error) {
+func (zeroReader) Read(b []byte) (int, error) {
 	for i := range b {
 		b[i] = 0
 	}
