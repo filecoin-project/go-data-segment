@@ -3,7 +3,6 @@ module github.com/filecoin-project/go-data-segment
 go 1.19
 
 require (
-	github.com/filecoin-project/go-commp-utils v0.1.3
 	github.com/filecoin-project/go-fil-commcid v0.1.0
 	github.com/filecoin-project/go-state-types v0.9.9
 	github.com/ipfs/go-cid v0.3.2
