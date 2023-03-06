@@ -13,13 +13,13 @@ import (
 	xerrors "golang.org/x/xerrors"
 )
 
-type Deal struct {
+type Aggregate struct {
 	DealSize abi.PaddedPieceSize
 	Index    IndexData
 	Tree     merkletree.Hybrid
 }
 
-func NewDeal(dealSize abi.PaddedPieceSize, subdeals []abi.PieceInfo) (*Deal, error) {
+func NewAggregate(dealSize abi.PaddedPieceSize, subdeals []abi.PieceInfo) (*Aggregate, error) {
 	maxEntries := MaxIndexEntriesInDeal(dealSize)
 	if uint(len(subdeals)) > maxEntries {
 		return nil, xerrors.Errorf("too many subdeals for a %d sized deal: %d > %d",
@@ -68,7 +68,7 @@ func NewDeal(dealSize abi.PaddedPieceSize, subdeals []abi.PieceInfo) (*Deal, err
 		return nil, xerrors.Errorf("batch set of index nodes failed: %w", err)
 	}
 
-	deal := Deal{
+	deal := Aggregate{
 		DealSize: dealSize,
 		Index:    *index,
 		Tree:     ht,
@@ -78,19 +78,19 @@ func NewDeal(dealSize abi.PaddedPieceSize, subdeals []abi.PieceInfo) (*Deal, err
 }
 
 // PieceCID returns the PieceCID of the deal containng all subdeals and the index
-func (d Deal) PieceCID() (cid.Cid, error) {
+func (d Aggregate) PieceCID() (cid.Cid, error) {
 	n := d.Tree.Root()
 	return commcid.PieceCommitmentV1ToCID(n[:])
 }
 
-func (d Deal) indexLoc() merkletree.Location {
+func (d Aggregate) indexLoc() merkletree.Location {
 	level := util.Log2Ceil(EntrySize / merkletree.NodeSize * uint64(MaxIndexEntriesInDeal(d.DealSize)))
 	index := uint64(1)<<level - 1
 	return merkletree.Location{Level: level, Index: index}
 }
 
 // IndexPieceCID returns the PieceCID of the index
-func (d Deal) IndexPieceCID() (cid.Cid, error) {
+func (d Aggregate) IndexPieceCID() (cid.Cid, error) {
 	l := d.indexLoc()
 	n, err := d.Tree.GetNode(l.Level, l.Index)
 	if err != nil {
@@ -100,7 +100,7 @@ func (d Deal) IndexPieceCID() (cid.Cid, error) {
 }
 
 // IndexReader returns a reader for the index containing unpadded bytes of the index
-func (d Deal) IndexReader() (io.Reader, error) {
+func (d Aggregate) IndexReader() (io.Reader, error) {
 	b, err := d.Index.MarshalBinary()
 	if err != nil {
 		return nil, xerrors.Errorf("marshaling index: %w", err)
@@ -124,11 +124,11 @@ func (d Deal) IndexReader() (io.Reader, error) {
 
 // IndexStartPosition returns the expected starting position where the index should be placed
 // in the unpadded units
-func (d Deal) IndexStartPosition() (uint64, error) {
+func (d Aggregate) IndexStartPosition() (uint64, error) {
 	return DataSegmentIndexStartOffset(d.DealSize), nil
 }
 
-func (d Deal) IndexSize() (abi.PaddedPieceSize, error) {
+func (d Aggregate) IndexSize() (abi.PaddedPieceSize, error) {
 	return abi.PaddedPieceSize(uint64(MaxIndexEntriesInDeal(d.DealSize)) * EntrySize), nil
 }
 
