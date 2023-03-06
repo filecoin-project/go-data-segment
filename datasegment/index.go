@@ -309,7 +309,7 @@ func MakeSegDescs(segments []merkletree.Node, segmentSizes []uint64) ([]merkletr
 		s := fr32.Fr32(segment)
 		// TODO: fix segment desciption to be in bytes
 		// XXX
-		currentDesc, err := MakeDataSegmentIdx(&s, curOffset*BytesInNode, segmentSizes[i]*BytesInNode)
+		currentDesc, err := MakeDataSegmentIdx(&s, curOffset*merkletree.NodeSize, segmentSizes[i]*merkletree.NodeSize)
 		if err != nil {
 			return nil, err
 		}
@@ -379,29 +379,6 @@ func serializeIndex(index *IndexData) ([]byte, error) {
 		}
 	}
 	return buf.Bytes(), nil
-}
-
-// deserializeFr32Entry deserializes a byte slice into an SegmentDesc
-func deserializeFr32Entry(encoded []byte) (*SegmentDesc, error) {
-	if len(encoded) < EntrySize {
-		return nil, xerrors.Errorf("passed encoded entry too small: %d < %d", len(encoded), EntrySize)
-	}
-	ctr := 0
-	commDs := (*[fr32.BytesNeeded]byte)(encoded[ctr : ctr+fr32.BytesNeeded])
-	ctr += fr32.BytesNeeded
-	offset := binary.LittleEndian.Uint64(encoded[ctr : ctr+BytesInInt])
-	ctr += BytesInInt
-	size := binary.LittleEndian.Uint64(encoded[ctr : ctr+BytesInInt])
-	ctr += BytesInInt
-	checksum := *(*[ChecksumSize]byte)(encoded[ctr : ctr+ChecksumSize])
-	ctr += ChecksumSize
-	en := SegmentDesc{
-		CommDs:   *(*merkletree.Node)(commDs),
-		Offset:   offset,
-		Size:     size,
-		Checksum: checksum,
-	}
-	return &en, nil
 }
 
 func validateIndexStructure(index *IndexData) error {

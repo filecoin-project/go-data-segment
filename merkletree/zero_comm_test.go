@@ -6,7 +6,9 @@ import (
 )
 
 func TestGenerateZeroCommTable(t *testing.T) {
-	t.Skip()
+	if os.Getenv("ZEROCCOMM_REGEN") == "" {
+		t.SkipNow()
+	}
 	maxD := 64
 	zeroComms := make([]Node, maxD)
 	for i := 1; i < maxD; i++ {

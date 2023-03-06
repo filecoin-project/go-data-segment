@@ -9,6 +9,8 @@ import (
 	"golang.org/x/xerrors"
 )
 
+const BytesInInt = 8
+
 // InclusionVerifierData is the information required for verification of the proof and is sourced
 // from the client.
 type InclusionVerifierData struct {
@@ -80,11 +82,15 @@ func (ip InclusionProof) ComputeExpectedAuxData(veriferData InclusionVerifierDat
 	enNode := merkletree.TruncatedHash(en.SerializeFr32())
 
 	assumedCommPa2, err := ip.ProofIndex.ComputeRoot(enNode)
+	if err != nil {
+		return nil, xerrors.Errorf("could not validate the index proof: %w", err)
+	}
+
 	if *assumedCommPa != *assumedCommPa2 {
 		return nil, xerrors.Errorf("aggregator's data commiements don't match: %x != %x", assumedCommPa, assumedCommPa2)
 	}
 
-	const BytesInDataSegmentIndexEntry = 2 * BytesInNode
+	const BytesInDataSegmentIndexEntry = 2 * merkletree.NodeSize
 	// TODO: check overflow
 	assumedSizePa2 := abi.PaddedPieceSize((1 << ip.ProofIndex.Depth()) * BytesInDataSegmentIndexEntry)
 	if assumedSizePa2 != assumedSizePa {
