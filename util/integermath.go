@@ -5,6 +5,12 @@ import (
 	"math/bits"
 )
 
+// CheckedMultiply multiplies a and b and returns (truncate(a*b), no_overflow)
+func CheckedMultiply(a, b uint64) (uint64, bool) {
+	hi, lo := bits.Mul64(a, b)
+	return lo, hi == 0
+}
+
 // Max returns the minimum value of inputs x, y
 func Max(x int, y int) int {
 	if x > y {
@@ -27,6 +33,13 @@ func Ceil(x uint, y uint) int {
 		return 0
 	}
 	return int(1 + ((x - 1) / y))
+}
+
+func IsPow2(value uint64) bool {
+	if value == 0 {
+		return true
+	}
+	return value&(value-1) == 0
 }
 
 // Log2Ceil computes the integer logarithm with ceiling for 64 bit unsigned ints

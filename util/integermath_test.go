@@ -1,7 +1,10 @@
 package util
 
 import (
+	"math/bits"
+	"math/rand"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -50,6 +53,40 @@ func TestCeilPow2(t *testing.T) {
 			assert.ErrorIs(t, err, tc.err, "error not equal for input: %d (testcase %d)", tc.input, i)
 		}
 	}
+}
+
+func TestIsPow2(t *testing.T) {
+	assert.True(t, IsPow2(0), "zero is power of two")
+	for i := 0; i < 64; i++ {
+		value := uint64(1) << i
+		assert.True(t, IsPow2(value), "%d is power of two", value)
+	}
+	seed := time.Now().UnixMicro()
+	rng := rand.New(rand.NewSource(seed))
+	t.Logf("rng seed: %d", seed)
+	for i := 0; i < 100000; i++ {
+		value := rng.Uint64()
+		expected := bits.OnesCount64(value) <= 1
+		assert.Equal(t, expected, IsPow2(value), "wrong response for %d at iteration %d", value, i)
+	}
+}
+
+func FuzzIsPow2(f *testing.F) {
+	add := func(value uint64) {
+		f.Add(value)
+	}
+	add(0)
+	add(1)
+	add(4)
+	add(1 << 63)
+	add(1<<63 + 1)
+	add(1<<63 - 1)
+	add(1<<64 - 2)
+	add(1<<64 - 1)
+	f.Fuzz(func(t *testing.T, value uint64) {
+		expected := bits.OnesCount64(value) <= 1
+		assert.Equal(t, expected, IsPow2(value), "wrong response for %d", value)
+	})
 }
 
 func TestMax(t *testing.T) {

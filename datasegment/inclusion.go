@@ -3,7 +3,7 @@ package datasegment
 import (
 	"github.com/filecoin-project/go-data-segment/fr32"
 	"github.com/filecoin-project/go-data-segment/merkletree"
-	commcid "github.com/filecoin-project/go-fil-commcid"
+	"github.com/filecoin-project/go-data-segment/util"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/ipfs/go-cid"
 	"golang.org/x/xerrors"
@@ -44,37 +44,47 @@ func indexAreaStart(sizePa abi.PaddedPieceSize) uint64 {
 
 func (ip InclusionProof) ComputeExpectedAuxData(veriferData InclusionVerifierData) (*InclusionAuxData, error) {
 	// Verification flow:
-	//	1. Decode Client's Piece commitment
-	//	2. Compute assumed aggregator's commitment based on the subtree inclusion proof
-	//	3. Compute size of aggregator's deal and offset of Client's deal within the Aggreggator's deal.
-	//	4. Create the DataSegmentIndexEntry based on Client's data and offset from 3
-	//	5. Compute second assumed aggregator's commitment based on the data segment index entry inclusion proof.
-	//  6. Check if DataSegmentIndexEntry falls into the correct area.
-	//	7. Compute second assumed aggregator's deal size.
-	//	8. Compare deal sizes and commitments from steps 2+3 against steps 5+6. Fail if not equal.
-	//	9. Return the computed values of aggregator's Commitment and Size as AuxData.
+	//  1. Varify inputs
+	//	2. Decode Client's Piece commitment
+	//	3. Compute assumed aggregator's commitment based on the subtree inclusion proof
+	//	4. Compute size of aggregator's deal and offset of Client's deal within the Aggreggator's deal.
+	//	5. Create the DataSegmentIndexEntry based on Client's data and offset from 3
+	//	6. Compute second assumed aggregator's commitment based on the data segment index entry inclusion proof.
+	//  7. Check if DataSegmentIndexEntry falls into the correct area.
+	//	8. Compute second assumed aggregator's deal size.
+	//	9. Compare deal sizes and commitments from steps 2+3 against steps 5+6. Fail if not equal.
+	//	10. Return the computed values of aggregator's Commitment and Size as AuxData.
 
-	// we can do this simpler than the library code
-	commPc, err := commcid.CIDToPieceCommitmentV1(veriferData.CommPc)
+	if !util.IsPow2(uint64(veriferData.SizePc)) {
+		return nil, xerrors.Errorf("size of piece provided by verifier is not power of two")
+	}
+
+	commPc, err := lightCid2CommP(veriferData.CommPc)
 	if err != nil {
 		return nil, xerrors.Errorf("invalid piece commitment: %w", err)
 	}
-	nodeCommPc := (*merkletree.Node)(commPc)
+	nodeCommPc := (merkletree.Node)(commPc)
 
 	// Compute the Commitment to aggregator's data and assume it is correct
 	// we will cross validate it against the other proof and then return it for futher validation
-	assumedCommPa, err := ip.ProofSubtree.ComputeRoot(nodeCommPc)
+	assumedCommPa, err := ip.ProofSubtree.ComputeRoot(&nodeCommPc)
 	if err != nil {
 		return nil, xerrors.Errorf("could not validate the subtree proof: %w", err)
 	}
 
-	// TODO: check overflow
-	assumedSizePa := abi.PaddedPieceSize((1 << ip.ProofSubtree.Depth()) * veriferData.SizePc)
-	// TODO: check overflow
+	var assumedSizePa abi.PaddedPieceSize
+	{
+		assumedSizePau64, ok := util.CheckedMultiply(uint64(1)<<ip.ProofSubtree.Depth(), uint64(veriferData.SizePc))
+		if !ok {
+			return nil, xerrors.Errorf("assumedSizePa overflow")
+		}
+		assumedSizePa = abi.PaddedPieceSize(assumedSizePau64)
+	}
+
 	// inclusion proof verification checks that index is less than the 1<<(path length)
 	dataOffset := ip.ProofSubtree.Index * uint64(veriferData.SizePc)
 
-	en, err := MakeDataSegmentIndexEntry((*fr32.Fr32)(nodeCommPc), dataOffset, uint64(veriferData.SizePc))
+	en, err := MakeDataSegmentIndexEntry((*fr32.Fr32)(&nodeCommPc), dataOffset, uint64(veriferData.SizePc))
 	if err != nil {
 		return nil, xerrors.Errorf("createding data segment index entry: %w", err)
 	}
@@ -91,19 +101,31 @@ func (ip InclusionProof) ComputeExpectedAuxData(veriferData InclusionVerifierDat
 	}
 
 	const BytesInDataSegmentIndexEntry = 2 * merkletree.NodeSize
-	// TODO: check overflow
-	assumedSizePa2 := abi.PaddedPieceSize((1 << ip.ProofIndex.Depth()) * BytesInDataSegmentIndexEntry)
+
+	var assumedSizePa2 abi.PaddedPieceSize
+	{
+		assumedSizePau64, ok := util.CheckedMultiply(uint64(1)<<ip.ProofIndex.Depth(), BytesInDataSegmentIndexEntry)
+		if !ok {
+			return nil, xerrors.Errorf("assumedSizePa2 overflow")
+		}
+		assumedSizePa2 = abi.PaddedPieceSize(assumedSizePau64)
+	}
+
 	if assumedSizePa2 != assumedSizePa {
 		return nil, xerrors.Errorf("aggregator's data size doesn't match")
 	}
+
 	idxStart := indexAreaStart(assumedSizePa2)
-	// TODO: check overflow?
-	if ip.ProofIndex.Index*uint64(EntrySize) < idxStart {
+	indexOffset, ok := util.CheckedMultiply(ip.ProofIndex.Index, BytesInDataSegmentIndexEntry)
+	if !ok {
+		return nil, xerrors.Errorf("indexOffset overflow")
+	}
+	if indexOffset < idxStart {
 		return nil, xerrors.Errorf("index entry at wrong position: %d < %d",
 			ip.ProofIndex.Index*uint64(EntrySize), idxStart)
 	}
 
-	cidPa, err := commcid.PieceCommitmentV1ToCID(assumedCommPa[:])
+	cidPa, err := lightComm2Cid(*assumedCommPa)
 	if err != nil {
 		return nil, xerrors.Errorf("converting raw commiement to CID: %w", err)
 	}

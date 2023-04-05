@@ -235,3 +235,10 @@ func TestComputeExpectedAuxDataGolden1(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, expectedAux, *newAux)
 }
+
+func TestLightCid2CommP(t *testing.T) {
+	c, err := commcid.PieceCommitmentV1ToCID(make([]byte, 32))
+	assert.NoError(t, err)
+	t.Logf("%#v, %d", c.Bytes(), len(c.Bytes()))
+
+}
