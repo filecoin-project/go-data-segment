@@ -1,8 +1,6 @@
 package merkletree
 
 import (
-	"fmt"
-
 	"golang.org/x/xerrors"
 )
 
@@ -117,12 +115,6 @@ func (ht Hybrid) idxFor(level int, index uint64) uint64 {
 	offsetOfSubtree := offsetOfSubtreeLayer + SparseBlockSize*indexOfSubtree
 
 	res := offsetOfSubtree + indexInSubtree
-	if false {
-		fmt.Printf("idxFor: %d@%d, depthOfSubtree: %d, depthInSubtree: %d, widthOfSubtreeAtDepth: %d, indexOfSubtree: %d, indexInSubtree: %d, sparseIndex: %d\n",
-			index, depth, depthOfSubtree, depthInSubtree, widthOfSubtreeAtDepth, indexOfSubtree, indexInSubtree, res)
-		fmt.Printf("offsetOfSubtreeLayer: %d, offsetOfSubtree: %d\n",
-			offsetOfSubtreeLayer, offsetOfSubtree)
-	}
 	return res
 }
 
