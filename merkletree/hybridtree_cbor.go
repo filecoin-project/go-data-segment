@@ -1,7 +1,9 @@
 package merkletree
 
 import (
+	"fmt"
 	"io"
+	"math"
 
 	cbg "github.com/whyrusleeping/cbor-gen"
 	"golang.org/x/exp/maps"
@@ -9,7 +11,117 @@ import (
 	xerrors "golang.org/x/xerrors"
 )
 
-func (h *Hybrid) UnmarshalCBOR(r io.Reader) error {
+func (h *Hybrid) UnmarshalCBOR(r io.Reader) (err error) {
+
+	cr := cbg.NewCborReader(r)
+
+	maj, extra, err := cr.ReadHeader()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err == io.EOF {
+			err = io.ErrUnexpectedEOF
+		}
+	}()
+
+	if maj != cbg.MajArray {
+		return fmt.Errorf("cbor input should be of type array")
+	}
+
+	if extra != 2 {
+		return fmt.Errorf("cbor input had wrong number of fields")
+	}
+
+	{
+		maj, extra, err = cr.ReadHeader()
+		if err != nil {
+			return err
+		}
+		if maj != cbg.MajUnsignedInt {
+			return fmt.Errorf("wrong type for int field")
+		}
+
+		if extra > math.MaxInt {
+			return xerrors.Errorf("log2Leafs in cbor too large")
+		}
+
+		newh, err := NewHybrid(int(extra))
+		if err != nil {
+			return xerrors.Errorf("creating new empty hybrid failed: %w", err)
+		}
+		*h = newh
+	}
+
+	{
+		maj, extra, err := cr.ReadHeader()
+		if err != nil {
+			return err
+		}
+		if maj != cbg.MajMap {
+			return fmt.Errorf("wrong type for map field")
+		}
+		mapItems := extra
+		if mapItems == 0 {
+			return nil
+		}
+		if mapItems*SparseBlockSize*NodeSize > 16<<30 {
+			return xerrors.Errorf("too large map")
+		}
+
+		h.data.initSubs()
+		for i := uint64(0); i < mapItems; i++ {
+			maj, extra, err := cr.ReadHeader()
+			if err != nil {
+				return err
+			}
+			if maj != cbg.MajUnsignedInt {
+				return fmt.Errorf("wrong type for uint field")
+			}
+
+			index := extra
+
+			maj, extra, err = cr.ReadHeader()
+			if err != nil {
+				return err
+			}
+
+			if maj != cbg.MajArray {
+				return fmt.Errorf("wrong type for int field")
+			}
+			if extra != SparseBlockSize {
+				return fmt.Errorf("incompatible sparse block size")
+			}
+			sparseBlock := make([]Node, SparseBlockSize)
+
+			for j := 0; j < SparseBlockSize; j++ {
+				b, err := cr.ReadByte()
+				if err != nil {
+					return err
+				}
+				if b == cbg.CborNull[0] {
+					continue
+				}
+				if err := cr.UnreadByte(); err != nil {
+					return err
+				}
+				maj, extra, err := cr.ReadHeader()
+				if err != nil {
+					return err
+				}
+				if maj != cbg.MajByteString {
+					return xerrors.Errorf("wrong type for Node")
+				}
+				if extra != NodeSize {
+					return xerrors.Errorf("wrong size for Node")
+				}
+				io.ReadFull(cr, sparseBlock[j][:])
+			}
+			h.data.subs[index] = sparseBlock
+
+		}
+
+	}
 
 	return nil
 }
@@ -32,13 +144,12 @@ func (h *Hybrid) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// early exit if subs is nil
-	if h.data.subs == nil {
-		_, err := cw.Write(cbg.CborNull)
-		return err
+	if len(h.data.subs)*SparseBlockSize*NodeSize > 16<<30 {
+		return xerrors.Errorf("too large map")
 	}
 
 	indexes := maps.Keys(h.data.subs)
+
 	slices.Sort(indexes)
 
 	writeSub := func(idx uint64, sub []Node) error {

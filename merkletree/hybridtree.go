@@ -24,7 +24,7 @@ func (l Location) LeafIndex() uint64 {
 }
 
 func NewHybrid(log2Leafs int) (Hybrid, error) {
-	if log2Leafs > 63 {
+	if log2Leafs > 60 {
 		return Hybrid{}, xerrors.Errorf("too many leafs: 2^%d", log2Leafs)
 	}
 	if log2Leafs < 0 {
@@ -220,10 +220,14 @@ func (sa SparseArray[T]) Get(index uint64) T {
 	return res
 }
 
+func (sa *SparseArray[T]) initSubs() {
+	sa.subs = make(map[uint64][]T)
+}
+
 // Set returns the old value
 func (sa *SparseArray[T]) Set(index uint64, val *T) T {
 	if sa.subs == nil {
-		sa.subs = make(map[uint64][]T)
+		sa.initSubs()
 	}
 	sub, ok := sa.subs[index/SparseBlockSize]
 	if !ok {
