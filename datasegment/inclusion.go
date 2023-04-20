@@ -125,7 +125,7 @@ func (ip InclusionProof) ComputeExpectedAuxData(veriferData InclusionVerifierDat
 			ip.ProofIndex.Index*uint64(EntrySize), idxStart)
 	}
 
-	cidPa, err := lightComm2Cid(*assumedCommPa)
+	cidPa, err := lightCommP2Cid(*assumedCommPa)
 	if err != nil {
 		return nil, xerrors.Errorf("converting raw commiement to CID: %w", err)
 	}

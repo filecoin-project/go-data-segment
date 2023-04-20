@@ -1,6 +1,7 @@
 package merkletree
 
 import (
+	"os"
 	"testing"
 
 	commcid "github.com/filecoin-project/go-fil-commcid"
@@ -124,6 +125,60 @@ func TestHybridAsGenerateUnsealedCID(t *testing.T) {
 		assert.NoError(t, err, "node info %d", i)
 		assert.Equal(t, expCommD, *root)
 	}
+	err = ht.SetNode(0, 1<<30-1, &Node{0x1})
+	assert.NoError(t, err)
+	t.Logf("Blocks: %d, size: %d", len(ht.data.subs), len(ht.data.subs)*SparseBlockSize*NodeSize)
+
+	if false {
+		f, err := os.CreateTemp("", "ht-encode-*.cbor")
+		assert.NoError(t, err)
+		err = ht.MarshalCBOR(f)
+		assert.NoError(t, err)
+		t.Logf("output name: %s", f.Name())
+		f.Close()
+	}
+
+}
+
+// FuzzSparseIndexing fuzzes for the property that two tuples of (depth, index)
+// cannot map to the same spareseIndex
+func FuzzSparseIndexing(f *testing.F) {
+	const TreeSize = 30
+	ht, err := NewHybrid(TreeSize)
+	if err != nil {
+		f.Fatal(err)
+	}
+	f.Add(int(0), uint64(0), int(0), uint64(1))
+	f.Add(int(0), uint64(0), int(0), uint64(1<<30-1))
+	f.Add(int(TreeSize), uint64(0), int(TreeSize-1), uint64(0))
+	f.Add(int(TreeSize-1), uint64(0), int(TreeSize-1), uint64(1))
+	f.Add(int(TreeSize-6), uint64(0), int(TreeSize-6), uint64(1<<6-1))
+	f.Add(int(TreeSize-7), uint64(0), int(TreeSize-7), uint64(1<<7-1))
+	f.Add(int(TreeSize-7), uint64(1<<7-1), int(TreeSize-8), uint64(0))
+	f.Add(int(TreeSize-15), uint64(1<<15-1), int(TreeSize-16), uint64(0))
+	f.Add(int(TreeSize-7), uint64(1<<7-1), int(TreeSize-8), uint64(0))
+	f.Add(int(TreeSize-14), uint64(1<<14-1), int(TreeSize-15), uint64(0))
+
+	f.Fuzz(func(t *testing.T, level1 int, index1 uint64, level2 int, index2 uint64) {
+		if level1 < 0 || level1 > TreeSize {
+			return
+		}
+		if index1 >= 1<<(TreeSize-level1) {
+			return
+		}
+		if level2 < 0 || level2 > TreeSize {
+			return
+		}
+		if index2 >= 1<<(TreeSize-level2) {
+			return
+		}
+		if index1 == index2 && level1 == level2 {
+			return
+		}
+		if sparseIdx := ht.idxFor(level1, index1); sparseIdx == ht.idxFor(level2, index2) {
+			t.Errorf("%d@%d and %d@%d map to the same sparse index: %d", index1, level1, index2, level2, sparseIdx)
+		}
+	})
 }
 
 func Must[T any](val T, err error) T {

@@ -18,6 +18,9 @@ func main() {
 		datasegment.InclusionVerifierData{},
 		datasegment.DataAggregationProof{},
 		datasegment.SingletonMarketSource{},
+
+		datasegment.SegmentDesc{},
+		datasegment.IndexData{},
 	); err != nil {
 		panic(err)
 	}

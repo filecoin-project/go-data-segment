@@ -19,6 +19,7 @@ type Aggregate struct {
 	Tree     merkletree.Hybrid
 }
 
+// NewAggregate creates the structure for verifiable deal aggregation
 func NewAggregate(dealSize abi.PaddedPieceSize, subdeals []abi.PieceInfo) (*Aggregate, error) {
 	maxEntries := MaxIndexEntriesInDeal(dealSize)
 	if uint(len(subdeals)) > maxEntries {

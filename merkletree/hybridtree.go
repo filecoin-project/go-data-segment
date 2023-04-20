@@ -1,6 +1,8 @@
 package merkletree
 
 import (
+	"fmt"
+
 	"golang.org/x/xerrors"
 )
 
@@ -9,10 +11,8 @@ type Hybrid struct {
 	// Levels of the tree are counted from the leaf layer, leaf leater is layer 0.
 	// Where the leaf layer lands depends on the log2Leafs value.
 	// The root node of a the tree is stored at position [1].
-	// The leaf data is stored at [2^(log2Leafs):2^(log2Leafs+1)]]
-	// Level N is at: [2^(log2Leafs-level):2^(log2Leafs-level+1)]
-	data      SparseArray[Node]
 	log2Leafs int
+	data      SparseArray[Node]
 }
 
 type Location struct {
@@ -20,7 +20,7 @@ type Location struct {
 	Index uint64
 }
 
-func (l Location) OffsetAtLeaf() uint64 {
+func (l Location) LeafIndex() uint64 {
 	// TODO maybe bounds check
 	return l.Index << l.Level
 }
@@ -99,14 +99,38 @@ func (ht Hybrid) validateLevelIndex(level int, idx uint64) error {
 }
 
 func (ht Hybrid) idxFor(level int, index uint64) uint64 {
-	return 1<<(ht.log2Leafs-level) + uint64(index)
+	// Hybrid Tree stores the MT as smaller trees in chunks dictated by SparseBlockSize
+	// For example with SparseBlockLog2Size of 8, each SparseBlock will store a single
+	// 8 deep tree. These threes are then stored one after breath-wise.
+	depth := ht.log2Leafs - level
+	const SubtreeDepth = SparseBlockLog2Size
+
+	depthOfSubtree := depth / SubtreeDepth // how deep is the subtree counted by subtree
+	depthInSubtree := depth % SubtreeDepth
+	widthOfSubtreeAtDepth := uint64(1) << depthInSubtree // how wide is the subtree for given depth
+	indexOfSubtree := index / widthOfSubtreeAtDepth      // what is the index of the subtree we should write to
+
+	indexInSubtree := widthOfSubtreeAtDepth + index%widthOfSubtreeAtDepth // what is the index in subtree
+
+	// offsetOfSubtreeLayer = sum(SparseBlockSize^N, {N, 0, depth}) - 1
+	offsetOfSubtreeLayer := (uint64(1)<<((depthOfSubtree+1)*SparseBlockLog2Size)-1)/(SparseBlockSize-1) - 1
+	offsetOfSubtree := offsetOfSubtreeLayer + SparseBlockSize*indexOfSubtree
+
+	res := offsetOfSubtree + indexInSubtree
+	if false {
+		fmt.Printf("idxFor: %d@%d, depthOfSubtree: %d, depthInSubtree: %d, widthOfSubtreeAtDepth: %d, indexOfSubtree: %d, indexInSubtree: %d, sparseIndex: %d\n",
+			index, depth, depthOfSubtree, depthInSubtree, widthOfSubtreeAtDepth, indexOfSubtree, indexInSubtree, res)
+		fmt.Printf("offsetOfSubtreeLayer: %d, offsetOfSubtree: %d\n",
+			offsetOfSubtreeLayer, offsetOfSubtree)
+	}
+	return res
 }
 
 func (ht *Hybrid) SetNode(level int, idx uint64, n *Node) error {
 	if err := ht.validateLevelIndex(level, idx); err != nil {
 		return xerrors.Errorf("in SetNode: %w", err)
 	}
-	// verify that subtrees this node are empty
+	// verify that subtrees of this node are empty
 	if level > 0 {
 		left, err := ht.getNodeRaw(level-1, 2*idx)
 		if err != nil {
@@ -120,7 +144,7 @@ func (ht *Hybrid) SetNode(level int, idx uint64, n *Node) error {
 			return xerrors.Errorf("getting subtree for validation: %w", err)
 		}
 		if !right.IsZero() {
-			return xerrors.Errorf("left subtree not empty")
+			return xerrors.Errorf("right subtree not empty")
 		}
 	}
 
@@ -167,6 +191,12 @@ type CommAndLoc struct {
 	Loc  Location
 }
 
+// BatchSet can be used for optimisation if necessary
+// Current algorith is O(M*log2(N)) where M=len(vals) and N=#leafs
+// There exists an optimization of applying all Set operations at the same time
+// avoiding the repeated updates to the same nodes.
+// This results in complexity always better than O(M*log2(N)),
+// O(M+log2(N)) in the best case scenario, with the worse case of O(N).
 func (ht *Hybrid) BatchSet(vals []CommAndLoc) error {
 	for i, v := range vals {
 		if err := ht.SetNode(v.Loc.Level, v.Loc.Index, &v.Comm); err != nil {
@@ -177,7 +207,8 @@ func (ht *Hybrid) BatchSet(vals []CommAndLoc) error {
 }
 
 // 256 nodes per block, resulting in 8KiB blocks
-const SparseBlockSize = 1 << 8
+const SparseBlockLog2Size = 8 // bench and tune if it is an issue
+const SparseBlockSize = 1 << SparseBlockLog2Size
 
 type SparseArray[T any] struct {
 	subs map[uint64][]T

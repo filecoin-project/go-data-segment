@@ -10,7 +10,11 @@ import (
 
 var cidCommPHeader = []byte{0x1, 0x81, 0xe2, 0x3, 0x92, 0x20, 0x20}
 
-func lightCid2CommP(c cid.Cid) ([32]byte, error) {
+type toBytes interface {
+	Bytes() []byte
+}
+
+func lightCid2CommP(c toBytes) ([32]byte, error) {
 	cb := c.Bytes()
 
 	if len(cb) != merkletree.NodeSize+len(cidCommPHeader) {
@@ -27,7 +31,7 @@ func lightCid2CommP(c cid.Cid) ([32]byte, error) {
 	return res, nil
 }
 
-func lightComm2Cid(commp [32]byte) (cid.Cid, error) {
+func lightCommP2Cid(commp [32]byte) (cid.Cid, error) {
 	// this is all that needs to be done to get valid Cid
 	cb := append(cidCommPHeader, commp[:]...)
 

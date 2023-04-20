@@ -403,3 +403,157 @@ func (t *SingletonMarketSource) UnmarshalCBOR(r io.Reader) (err error) {
 	}
 	return nil
 }
+
+var lengthBufSegmentDesc = []byte{132}
+
+func (t *SegmentDesc) MarshalCBOR(w io.Writer) error {
+	if t == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+
+	cw := cbg.NewCborWriter(w)
+
+	if _, err := cw.Write(lengthBufSegmentDesc); err != nil {
+		return err
+	}
+
+	// t.CommDs (merkletree.Node) (array)
+	if len(t.CommDs) > cbg.ByteArrayMaxLen {
+		return xerrors.Errorf("Byte array in field t.CommDs was too long")
+	}
+
+	if err := cw.WriteMajorTypeHeader(cbg.MajByteString, uint64(len(t.CommDs))); err != nil {
+		return err
+	}
+
+	if _, err := cw.Write(t.CommDs[:]); err != nil {
+		return err
+	}
+
+	// t.Offset (uint64) (uint64)
+
+	if err := cw.WriteMajorTypeHeader(cbg.MajUnsignedInt, uint64(t.Offset)); err != nil {
+		return err
+	}
+
+	// t.Size (uint64) (uint64)
+
+	if err := cw.WriteMajorTypeHeader(cbg.MajUnsignedInt, uint64(t.Size)); err != nil {
+		return err
+	}
+
+	// t.Checksum ([16]uint8) (array)
+	if len(t.Checksum) > cbg.ByteArrayMaxLen {
+		return xerrors.Errorf("Byte array in field t.Checksum was too long")
+	}
+
+	if err := cw.WriteMajorTypeHeader(cbg.MajByteString, uint64(len(t.Checksum))); err != nil {
+		return err
+	}
+
+	if _, err := cw.Write(t.Checksum[:]); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (t *SegmentDesc) UnmarshalCBOR(r io.Reader) (err error) {
+	*t = SegmentDesc{}
+
+	cr := cbg.NewCborReader(r)
+
+	maj, extra, err := cr.ReadHeader()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err == io.EOF {
+			err = io.ErrUnexpectedEOF
+		}
+	}()
+
+	if maj != cbg.MajArray {
+		return fmt.Errorf("cbor input should be of type array")
+	}
+
+	if extra != 4 {
+		return fmt.Errorf("cbor input had wrong number of fields")
+	}
+
+	// t.CommDs (merkletree.Node) (array)
+
+	maj, extra, err = cr.ReadHeader()
+	if err != nil {
+		return err
+	}
+
+	if extra > cbg.ByteArrayMaxLen {
+		return fmt.Errorf("t.CommDs: byte array too large (%d)", extra)
+	}
+	if maj != cbg.MajByteString {
+		return fmt.Errorf("expected byte array")
+	}
+
+	if extra != 32 {
+		return fmt.Errorf("expected array to have 32 elements")
+	}
+
+	t.CommDs = [32]uint8{}
+
+	if _, err := io.ReadFull(cr, t.CommDs[:]); err != nil {
+		return err
+	}
+	// t.Offset (uint64) (uint64)
+
+	{
+
+		maj, extra, err = cr.ReadHeader()
+		if err != nil {
+			return err
+		}
+		if maj != cbg.MajUnsignedInt {
+			return fmt.Errorf("wrong type for uint64 field")
+		}
+		t.Offset = uint64(extra)
+
+	}
+	// t.Size (uint64) (uint64)
+
+	{
+
+		maj, extra, err = cr.ReadHeader()
+		if err != nil {
+			return err
+		}
+		if maj != cbg.MajUnsignedInt {
+			return fmt.Errorf("wrong type for uint64 field")
+		}
+		t.Size = uint64(extra)
+
+	}
+	// t.Checksum ([16]uint8) (array)
+
+	maj, extra, err = cr.ReadHeader()
+	if err != nil {
+		return err
+	}
+
+	if extra > cbg.ByteArrayMaxLen {
+		return fmt.Errorf("t.Checksum: byte array too large (%d)", extra)
+	}
+	if maj != cbg.MajByteString {
+		return fmt.Errorf("expected byte array")
+	}
+
+	if extra != 16 {
+		return fmt.Errorf("expected array to have 16 elements")
+	}
+
+	t.Checksum = [16]uint8{}
+
+	if _, err := io.ReadFull(cr, t.Checksum[:]); err != nil {
+		return err
+	}
+	return nil
+}
