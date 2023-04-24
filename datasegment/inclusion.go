@@ -150,3 +150,10 @@ func CollectInclusionProof(ht *merkletree.Hybrid, dealInfo merkletree.CommAndLoc
 
 	return &InclusionProof{ProofSubtree: subTreeProof, ProofIndex: dsProof}, nil
 }
+
+// VerifierDataForPieceInfo returns information provided by the verifier based on PieceInfo
+func VerifierDataForPieceInfo(pi abi.PieceInfo) InclusionVerifierData {
+	return InclusionVerifierData{
+		CommPc: pi.PieceCID, SizePc: pi.Size,
+	}
+}

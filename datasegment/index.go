@@ -61,6 +61,7 @@ func MakeIndex(entries []SegmentDesc) (*IndexData, error) {
 }
 
 func MakeIndexFromCommLoc(dealInfos []merkletree.CommAndLoc) (*IndexData, error) {
+	fmt.Printf("%+v\n", dealInfos)
 	entries := make([]SegmentDesc, 0, len(dealInfos))
 	for _, di := range dealInfos {
 		sd := SegmentDesc{
@@ -172,6 +173,19 @@ func (sd SegmentDesc) UnpaddedOffest() uint64 {
 // UnpaddedLength returns unpadded length of the sub-deal
 func (sd SegmentDesc) UnpaddedLength() uint64 {
 	return sd.Size - sd.Size/128
+}
+
+func (sd SegmentDesc) CommAndLoc() merkletree.CommAndLoc {
+	lvl := util.Log2Ceil(sd.Size / merkletree.NodeSize)
+	res := merkletree.CommAndLoc{
+		Comm: sd.CommDs,
+		Loc: merkletree.Location{
+			Level: lvl,
+			Index: sd.Offset / merkletree.NodeSize >> lvl,
+		},
+	}
+	fmt.Printf("commLoc: %+v\n", res)
+	return res
 }
 
 func (sd SegmentDesc) computeChecksum() [ChecksumSize]byte {

@@ -43,4 +43,11 @@ func TestDealCreation(t *testing.T) {
 		assert.Equal(t, a.Index.Entries, parsedValidEntries)
 	})
 
+	for _, pi := range subPieceInfos {
+		ip, err := a.ProofForPieceInfo(pi)
+		aux, err := ip.ComputeExpectedAuxData(VerifierDataForPieceInfo(pi))
+		assert.NoError(t, err)
+		assert.Equal(t, InclusionAuxData{CommPa: pcid, SizePa: a.DealSize}, *aux)
+	}
+
 }

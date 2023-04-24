@@ -13,13 +13,14 @@ type Hybrid struct {
 	data      SparseArray[Node]
 }
 
+// Location represents a location in the MerkleTree
+// Level is counted from the leaf layer, with 0 being leaf layer.
 type Location struct {
 	Level int
 	Index uint64
 }
 
 func (l Location) LeafIndex() uint64 {
-	// TODO maybe bounds check
 	return l.Index << l.Level
 }
 
@@ -178,6 +179,7 @@ func (ht *Hybrid) SetNode(level int, idx uint64, n *Node) error {
 	return nil
 }
 
+// CommAndLoc represents Commitment and Location
 type CommAndLoc struct {
 	Comm Node
 	Loc  Location

@@ -20,6 +20,7 @@ type Aggregate struct {
 }
 
 // NewAggregate creates the structure for verifiable deal aggregation
+// based on target deal size and subdeals that should be included.
 func NewAggregate(dealSize abi.PaddedPieceSize, subdeals []abi.PieceInfo) (*Aggregate, error) {
 	maxEntries := MaxIndexEntriesInDeal(dealSize)
 	if uint(len(subdeals)) > maxEntries {
@@ -27,7 +28,6 @@ func NewAggregate(dealSize abi.PaddedPieceSize, subdeals []abi.PieceInfo) (*Aggr
 			dealSize, len(subdeals), maxEntries)
 	}
 	cl, totalSize, err := ComputeDealPlacement(subdeals)
-	_ = cl
 	if err != nil {
 		return nil, xerrors.Errorf("computing deal placment: %w", err)
 	}
@@ -69,31 +69,65 @@ func NewAggregate(dealSize abi.PaddedPieceSize, subdeals []abi.PieceInfo) (*Aggr
 		return nil, xerrors.Errorf("batch set of index nodes failed: %w", err)
 	}
 
-	deal := Aggregate{
+	agg := Aggregate{
 		DealSize: dealSize,
 		Index:    *index,
 		Tree:     ht,
 	}
 
-	return &deal, nil
+	return &agg, nil
+}
+
+// ProofForPieceInfo searches for piece within the Aggregate based on PieceInfo and gathers all the
+// information required to produce a proof.
+func (a Aggregate) ProofForPieceInfo(d abi.PieceInfo) (*InclusionProof, error) {
+	comm, err := commcid.CIDToPieceCommitmentV1(d.PieceCID)
+	if err != nil {
+		return nil, xerrors.Errorf("convering cid to commitment: %w", err)
+	}
+	index := -1
+	for i, ie := range a.Index.Entries {
+		if bytes.Equal(ie.CommDs[:], comm) && ie.Size == uint64(d.Size) {
+			index = i
+			break
+		}
+	}
+	if index == -1 {
+		return nil, xerrors.Errorf("entry for a piece with this PieceInfo was not found in Aggregate")
+	}
+
+	return a.ProofForIndexEntry(index)
+}
+
+// ProofForIndexEntry gathers information required to produce an InclusionProof based on the index
+// of data within the DataSegment Index.
+func (a Aggregate) ProofForIndexEntry(idx int) (*InclusionProof, error) {
+	e := a.Index.Entries[idx]
+	commLoc := e.CommAndLoc()
+	ip, err := CollectInclusionProof(&a.Tree, commLoc, idx)
+	if err != nil {
+		return nil, xerrors.Errorf("collecting inclusion proof: %w", err)
+	}
+
+	return ip, nil
 }
 
 // PieceCID returns the PieceCID of the deal containng all subdeals and the index
-func (d Aggregate) PieceCID() (cid.Cid, error) {
-	n := d.Tree.Root()
+func (a Aggregate) PieceCID() (cid.Cid, error) {
+	n := a.Tree.Root()
 	return commcid.PieceCommitmentV1ToCID(n[:])
 }
 
-func (d Aggregate) indexLoc() merkletree.Location {
-	level := util.Log2Ceil(EntrySize / merkletree.NodeSize * uint64(MaxIndexEntriesInDeal(d.DealSize)))
+func (a Aggregate) indexLoc() merkletree.Location {
+	level := util.Log2Ceil(EntrySize / merkletree.NodeSize * uint64(MaxIndexEntriesInDeal(a.DealSize)))
 	index := uint64(1)<<level - 1
 	return merkletree.Location{Level: level, Index: index}
 }
 
 // IndexPieceCID returns the PieceCID of the index
-func (d Aggregate) IndexPieceCID() (cid.Cid, error) {
-	l := d.indexLoc()
-	n, err := d.Tree.GetNode(l.Level, l.Index)
+func (a Aggregate) IndexPieceCID() (cid.Cid, error) {
+	l := a.indexLoc()
+	n, err := a.Tree.GetNode(l.Level, l.Index)
 	if err != nil {
 		return cid.Undef, xerrors.Errorf("getting node: %w", err)
 	}
@@ -101,8 +135,8 @@ func (d Aggregate) IndexPieceCID() (cid.Cid, error) {
 }
 
 // IndexReader returns a reader for the index containing unpadded bytes of the index
-func (d Aggregate) IndexReader() (io.Reader, error) {
-	b, err := d.Index.MarshalBinary()
+func (a Aggregate) IndexReader() (io.Reader, error) {
+	b, err := a.Index.MarshalBinary()
 	if err != nil {
 		return nil, xerrors.Errorf("marshaling index: %w", err)
 	}
@@ -116,7 +150,7 @@ func (d Aggregate) IndexReader() (io.Reader, error) {
 	bNoPad := make([]byte, len(b)-len(b)/128)
 	fr32.Unpad(bNoPad, b)
 
-	unpaddedIndexSize := int64(MaxIndexEntriesInDeal(d.DealSize) * EntrySize)
+	unpaddedIndexSize := int64(MaxIndexEntriesInDeal(a.DealSize) * EntrySize)
 	unpaddedIndexSize = unpaddedIndexSize - unpaddedIndexSize/128
 	paddingSize := unpaddedIndexSize - int64(len(bNoPad))
 
@@ -125,12 +159,12 @@ func (d Aggregate) IndexReader() (io.Reader, error) {
 
 // IndexStartPosition returns the expected starting position where the index should be placed
 // in the unpadded units
-func (d Aggregate) IndexStartPosition() (uint64, error) {
-	return DataSegmentIndexStartOffset(d.DealSize), nil
+func (a Aggregate) IndexStartPosition() (uint64, error) {
+	return DataSegmentIndexStartOffset(a.DealSize), nil
 }
 
-func (d Aggregate) IndexSize() (abi.PaddedPieceSize, error) {
-	return abi.PaddedPieceSize(uint64(MaxIndexEntriesInDeal(d.DealSize)) * EntrySize), nil
+func (a Aggregate) IndexSize() (abi.PaddedPieceSize, error) {
+	return abi.PaddedPieceSize(uint64(MaxIndexEntriesInDeal(a.DealSize)) * EntrySize), nil
 }
 
 // ComputeDealPlacement takes in PieceInfos with Comm and Size,
