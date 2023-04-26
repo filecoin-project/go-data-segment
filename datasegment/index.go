@@ -61,7 +61,6 @@ func MakeIndex(entries []SegmentDesc) (*IndexData, error) {
 }
 
 func MakeIndexFromCommLoc(dealInfos []merkletree.CommAndLoc) (*IndexData, error) {
-	fmt.Printf("%+v\n", dealInfos)
 	entries := make([]SegmentDesc, 0, len(dealInfos))
 	for _, di := range dealInfos {
 		sd := SegmentDesc{

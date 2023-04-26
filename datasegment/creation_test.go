@@ -1,11 +1,17 @@
 package datasegment
 
 import (
+	"compress/flate"
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
 	"testing"
 
 	abi "github.com/filecoin-project/go-state-types/abi"
 	cid "github.com/ipfs/go-cid"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func samplePieceInfos1() []abi.PieceInfo {
@@ -20,7 +26,7 @@ func samplePieceInfos1() []abi.PieceInfo {
 	return res
 }
 
-func TestDealCreation(t *testing.T) {
+func TestAggregateCreation(t *testing.T) {
 	subPieceInfos := samplePieceInfos1()
 	dealSize := abi.PaddedPieceSize(32 << 30)
 	a, err := NewAggregate(dealSize, subPieceInfos)
@@ -49,5 +55,113 @@ func TestDealCreation(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, InclusionAuxData{CommPa: pcid, SizePa: a.DealSize}, *aux)
 	}
+}
 
+func TestAggregateSample(t *testing.T) {
+	pieceInfos := []abi.PieceInfo{
+		{
+			PieceCID: cid.MustParse("baga6ea4seaqae5ysjdbsr4b5jhotaz5ooh62jrrdbxwygfpkkfjz44kvywycmgy"),
+			Size:     abi.UnpaddedPieceSize(520192).Padded(),
+		},
+		{
+			PieceCID: cid.MustParse("baga6ea4seaqnrm2n2g4m23t6rs26obxjw2tjtr7tcho24gepj2naqhevytduyoa"),
+			Size:     abi.UnpaddedPieceSize(260096).Padded(),
+		},
+	}
+	dealSize := abi.PaddedPieceSize(1 << 20)
+	a, err := NewAggregate(dealSize, pieceInfos)
+	assert.NoError(t, err)
+	assert.NotNil(t, a)
+
+	f, err := os.Create("testdata/sample_aggregate/index.data")
+	require.NoError(t, err)
+
+	r, err := a.IndexReader()
+	assert.NoError(t, err)
+	nbytes, err := io.Copy(f, r)
+	require.NoError(t, err)
+
+	err = f.Close()
+	assert.NoError(t, err)
+
+	f, err = os.Create("testdata/sample_aggregate/index.data.commp")
+	require.NoError(t, err)
+
+	indexCid, err := a.IndexPieceCID()
+	assert.NoError(t, err)
+	fmt.Fprintf(f, "CID: %s\n", indexCid)
+	fmt.Fprintf(f, "Piece size: %dB\n", nbytes)
+	fmt.Fprintf(f, "Piece size in bytes: %d\n", nbytes)
+
+	f, err = os.CreateTemp(t.TempDir(), "deal-*.data")
+	require.NoError(t, err)
+	err = f.Truncate(int64(abi.PaddedPieceSize(dealSize).Unpadded()))
+	require.NoError(t, err)
+
+	{
+		p0, err := os.Open("testdata/sample_aggregate/cat.png.car")
+		require.NoError(t, err)
+		_, err = io.Copy(f, p0)
+		require.NoError(t, err)
+	}
+	{
+		p1, err := os.Open("testdata/sample_aggregate/Verifiable Data Aggregation.png.car")
+		require.NoError(t, err)
+		_, err = f.Seek(int64(pieceInfos[0].Size.Unpadded()), os.SEEK_SET)
+		require.NoError(t, err)
+		_, err = io.Copy(f, p1)
+		require.NoError(t, err)
+		err = p1.Close()
+		assert.NoError(t, err)
+	}
+	{
+		index_start, err := a.IndexStartPosition()
+		require.NoError(t, err)
+		_, err = f.Seek(int64(index_start), os.SEEK_SET)
+		require.NoError(t, err)
+		r, err := a.IndexReader()
+		require.NoError(t, err)
+		nbytes, err = io.Copy(f, r)
+		require.NoError(t, err)
+
+		index_size, err := a.IndexSize()
+		require.NoError(t, err)
+		assert.Equal(t, int64(index_size.Unpadded()), nbytes)
+	}
+	{
+		_, err = f.Seek(0, os.SEEK_SET)
+		require.NoError(t, err)
+		dealData, err := os.Create("testdata/sample_aggregate/deal.data.flate")
+		ff, err := flate.NewWriter(dealData, flate.DefaultCompression)
+		require.NoError(t, err)
+
+		_, err = io.Copy(ff, f)
+		require.NoError(t, err)
+
+		err = ff.Close()
+		require.NoError(t, err)
+	}
+
+	{
+		indexStart := DataSegmentIndexStartOffset(dealSize)
+		dealDataC, err := os.Open("testdata/sample_aggregate/deal.data.flate")
+		require.NoError(t, err)
+		dealData := flate.NewReader(dealDataC)
+		_, err = io.CopyN(io.Discard, dealData, int64(indexStart))
+		require.NoError(t, err)
+
+		indexData, err := ParseDataSegmentIndex(dealData)
+		require.NoError(t, err)
+		assert.Equal(t, Must(a.Index.ValidEntries()), Must(indexData.ValidEntries()))
+	}
+	indexJson, err := os.Create("testdata/sample_aggregate/index.json")
+	require.NoError(t, err)
+	entries, err := a.Index.ValidEntries()
+	require.NoError(t, err)
+
+	enc := json.NewEncoder(indexJson)
+	enc.SetIndent("", "  ")
+	err = enc.Encode(entries)
+	assert.NoError(t, err)
+	indexJson.Close()
 }
