@@ -98,6 +98,7 @@ func TestAggregateSample(t *testing.T) {
 	require.NoError(t, err)
 
 	{
+		_, err = f.Seek(int64(a.Index.Entries[0].UnpaddedOffest()), os.SEEK_SET)
 		p0, err := os.Open("testdata/sample_aggregate/cat.png.car")
 		require.NoError(t, err)
 		_, err = io.Copy(f, p0)
@@ -106,7 +107,7 @@ func TestAggregateSample(t *testing.T) {
 	{
 		p1, err := os.Open("testdata/sample_aggregate/Verifiable Data Aggregation.png.car")
 		require.NoError(t, err)
-		_, err = f.Seek(int64(pieceInfos[0].Size.Unpadded()), os.SEEK_SET)
+		_, err = f.Seek(int64(a.Index.Entries[1].UnpaddedOffest()), os.SEEK_SET)
 		require.NoError(t, err)
 		_, err = io.Copy(f, p1)
 		require.NoError(t, err)
