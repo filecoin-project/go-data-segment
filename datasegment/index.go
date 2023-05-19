@@ -164,7 +164,7 @@ func (sd SegmentDesc) PieceCID() cid.Cid {
 	return c
 }
 
-// UnpaddedOffest returns unpadded offset relative of the sub-deal relative to the deal start
+// UnpaddedOffest returns unpadded offset of the sub-deal relative to the deal start
 func (sd SegmentDesc) UnpaddedOffest() uint64 {
 	return sd.Offset - sd.Offset/128
 }
@@ -183,7 +183,6 @@ func (sd SegmentDesc) CommAndLoc() merkletree.CommAndLoc {
 			Index: sd.Offset / merkletree.NodeSize >> lvl,
 		},
 	}
-	fmt.Printf("commLoc: %+v\n", res)
 	return res
 }
 

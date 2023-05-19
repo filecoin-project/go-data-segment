@@ -165,3 +165,23 @@ func TestAggregateSample(t *testing.T) {
 	assert.NoError(t, err)
 	indexJson.Close()
 }
+
+func TestTwoPieces(t *testing.T) {
+	pieces := []abi.PieceInfo{
+		{
+			Size:     abi.PaddedPieceSize(131072),
+			PieceCID: Must(cid.Parse("baga6ea4seaqievout3bskdb76gzldeidkhxo6z5zjrnl2jruvwfwvr2uvvpuwdi")),
+		}, {
+			Size:     abi.PaddedPieceSize(524288),
+			PieceCID: Must(cid.Parse("baga6ea4seaqkzsosscjqdegbhqrlequtm7pbjscwpeqwhrd53cxov5td34vfojy")),
+		},
+	}
+	_, err := NewAggregate(abi.PaddedPieceSize(1<<20), pieces)
+	assert.ErrorContains(t, err, "sub-deals are too large")
+}
+
+func TestFailWithNonPow2(t *testing.T) {
+
+	_, err := NewAggregate(abi.PaddedPieceSize(1<<20+1), nil)
+	assert.ErrorContains(t, err, "padded piece size must be a power of 2")
+}

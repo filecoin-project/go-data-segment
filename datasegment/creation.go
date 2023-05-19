@@ -22,6 +22,9 @@ type Aggregate struct {
 // NewAggregate creates the structure for verifiable deal aggregation
 // based on target deal size and subdeals that should be included.
 func NewAggregate(dealSize abi.PaddedPieceSize, subdeals []abi.PieceInfo) (*Aggregate, error) {
+	if err := dealSize.Validate(); err != nil {
+		return nil, xerrors.Errorf("invalid dealSize: %w", err)
+	}
 	maxEntries := MaxIndexEntriesInDeal(dealSize)
 	if uint(len(subdeals)) > maxEntries {
 		return nil, xerrors.Errorf("too many subdeals for a %d sized deal: %d > %d",
@@ -187,7 +190,7 @@ func ComputeDealPlacement(dealInfos []abi.PieceInfo) ([]merkletree.CommAndLoc, u
 
 		offset = (index + 1) * sizeInNodes // select the next index at ni.lvl and go back to nodewise
 	}
-	return res, offset, nil
+	return res, offset * merkletree.NodeSize, nil
 }
 
 type zeroReader struct{}
