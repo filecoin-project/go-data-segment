@@ -1,7 +1,6 @@
 package datasegment
 
 import (
-	"compress/flate"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -131,9 +130,7 @@ func TestAggregateSample(t *testing.T) {
 	{
 		_, err = f.Seek(0, os.SEEK_SET)
 		require.NoError(t, err)
-		dealData, err := os.Create("testdata/sample_aggregate/deal.data.flate")
-		ff, err := flate.NewWriter(dealData, flate.DefaultCompression)
-		require.NoError(t, err)
+		ff, err := os.Create("testdata/sample_aggregate/deal.data")
 
 		_, err = io.Copy(ff, f)
 		require.NoError(t, err)
@@ -144,11 +141,9 @@ func TestAggregateSample(t *testing.T) {
 
 	{
 		indexStart := DataSegmentIndexStartOffset(dealSize)
-		dealDataC, err := os.Open("testdata/sample_aggregate/deal.data.flate")
+		dealData, err := os.Open("testdata/sample_aggregate/deal.data")
 		require.NoError(t, err)
-		dealData := flate.NewReader(dealDataC)
-		_, err = io.CopyN(io.Discard, dealData, int64(indexStart))
-		require.NoError(t, err)
+		dealData.Seek(int64(indexStart), os.SEEK_SET)
 
 		indexData, err := ParseDataSegmentIndex(dealData)
 		require.NoError(t, err)
