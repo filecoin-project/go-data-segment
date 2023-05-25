@@ -125,7 +125,7 @@ func (a Aggregate) PieceCID() (cid.Cid, error) {
 
 func (a Aggregate) indexLoc() merkletree.Location {
 	level := util.Log2Ceil(EntrySize / merkletree.NodeSize * uint64(MaxIndexEntriesInDeal(a.DealSize)))
-	index := uint64(1)<<level - 1
+	index := uint64(1)<<(a.Tree.MaxLevel()-level) - 1
 	return merkletree.Location{Level: level, Index: index}
 }
 
@@ -212,7 +212,7 @@ func (a Aggregate) AggregateObjectReader(subPieceReaders []io.Reader) (io.Reader
 		spLen := spEntry.UnpaddedLength()
 
 		if err := addPiece(subPieceReaders[i], int64(spOffset), int64(spLen)); err != nil {
-			errs = multierror.Append(errs, err)
+			errs = multierror.Append(errs, xerrors.Errorf("subpiece %d: %w", i, err))
 		}
 	}
 

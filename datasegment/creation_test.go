@@ -7,6 +7,8 @@ import (
 	"os"
 	"testing"
 
+	commcid "github.com/filecoin-project/go-fil-commcid"
+	commp "github.com/filecoin-project/go-fil-commp-hashhash"
 	abi "github.com/filecoin-project/go-state-types/abi"
 	cid "github.com/ipfs/go-cid"
 	"github.com/stretchr/testify/assert"
@@ -56,6 +58,75 @@ func TestAggregateCreation(t *testing.T) {
 	}
 }
 
+func TestAggregateObjectReader(t *testing.T) {
+	pieceInfos := []abi.PieceInfo{
+		{
+			PieceCID: cid.MustParse("baga6ea4seaqae5ysjdbsr4b5jhotaz5ooh62jrrdbxwygfpkkfjz44kvywycmgy"),
+			Size:     abi.UnpaddedPieceSize(520192).Padded(),
+		},
+		{
+			PieceCID: cid.MustParse("baga6ea4seaqnrm2n2g4m23t6rs26obxjw2tjtr7tcho24gepj2naqhevytduyoa"),
+			Size:     abi.UnpaddedPieceSize(260096).Padded(),
+		},
+	}
+	dealSize := abi.PaddedPieceSize(1 << 20)
+	a, err := NewAggregate(dealSize, pieceInfos)
+	assert.NoError(t, err)
+	assert.NotNil(t, a)
+
+	p0, err := os.Open("testdata/sample_aggregate/cat.png.car")
+	require.NoError(t, err)
+
+	p1, err := os.Open("testdata/sample_aggregate/Verifiable Data Aggregation.png.car")
+	require.NoError(t, err)
+
+	objectReader, err := a.AggregateObjectReader([]io.Reader{p0, p1})
+	require.NoError(t, err)
+
+	commpHasher := commp.Calc{}
+	_, err = io.CopyBuffer(&commpHasher, objectReader, make([]byte, commpHasher.BlockSize()*128))
+	assert.NoError(t, err)
+
+	commp, paddedSize, err := commpHasher.Digest()
+	pieceCid := Must(commcid.PieceCommitmentV1ToCID(commp))
+	assert.Equal(t, uint64(dealSize), uint64(paddedSize))
+	assert.Equal(t, cid.MustParse("baga6ea4seaqnqkeoqevjjjfe46wo2lpfclcbmkyms4wkz5srou3vzmr3w3c72bq"), pieceCid)
+	assert.Equal(t, pieceCid, Must(a.PieceCID()))
+
+}
+
+func TestIndexCID(t *testing.T) {
+	pieceInfos := []abi.PieceInfo{
+		{
+			PieceCID: cid.MustParse("baga6ea4seaqae5ysjdbsr4b5jhotaz5ooh62jrrdbxwygfpkkfjz44kvywycmgy"),
+			Size:     abi.UnpaddedPieceSize(520192).Padded(),
+		},
+		{
+			PieceCID: cid.MustParse("baga6ea4seaqnrm2n2g4m23t6rs26obxjw2tjtr7tcho24gepj2naqhevytduyoa"),
+			Size:     abi.UnpaddedPieceSize(260096).Padded(),
+		},
+	}
+	dealSize := abi.PaddedPieceSize(1 << 20)
+	a, err := NewAggregate(dealSize, pieceInfos)
+	assert.NoError(t, err)
+	assert.NotNil(t, a)
+
+	indexReader, err := a.IndexReader()
+	assert.NoError(t, err)
+
+	indexCID, err := a.IndexPieceCID()
+	assert.NoError(t, err)
+
+	commpHasher := commp.Calc{}
+	_, err = io.CopyBuffer(&commpHasher, indexReader, make([]byte, commpHasher.BlockSize()*128))
+	assert.NoError(t, err)
+
+	commp, paddedSize, err := commpHasher.Digest()
+	indexCID2 := Must(commcid.PieceCommitmentV1ToCID(commp))
+	assert.Equal(t, uint64(Must(a.IndexSize())), uint64(paddedSize))
+	assert.Equal(t, indexCID, indexCID2)
+}
+
 func TestAggregateSample(t *testing.T) {
 	pieceInfos := []abi.PieceInfo{
 		{
@@ -86,6 +157,7 @@ func TestAggregateSample(t *testing.T) {
 	f, err = os.Create("testdata/sample_aggregate/index.data.commp")
 	require.NoError(t, err)
 
+	fmt.Printf("getting index cid\n")
 	indexCid, err := a.IndexPieceCID()
 	assert.NoError(t, err)
 	fmt.Fprintf(f, "CID: %s\n", indexCid)
@@ -160,6 +232,20 @@ func TestAggregateSample(t *testing.T) {
 	err = enc.Encode(entries)
 	assert.NoError(t, err)
 	indexJson.Close()
+
+	dealData, err := os.Open("testdata/sample_aggregate/deal.data")
+	require.NoError(t, err)
+
+	commpHasher := commp.Calc{}
+	_, err = io.CopyBuffer(&commpHasher, dealData, make([]byte, commpHasher.BlockSize()*128))
+	assert.NoError(t, err)
+
+	commp, paddedSize, err := commpHasher.Digest()
+	pieceCid := Must(commcid.PieceCommitmentV1ToCID(commp))
+	assert.Equal(t, uint64(dealSize), uint64(paddedSize))
+	assert.Equal(t, cid.MustParse("baga6ea4seaqnqkeoqevjjjfe46wo2lpfclcbmkyms4wkz5srou3vzmr3w3c72bq"),
+		pieceCid)
+	assert.Equal(t, pieceCid, Must(a.PieceCID()))
 }
 
 func TestTwoPieces(t *testing.T) {
