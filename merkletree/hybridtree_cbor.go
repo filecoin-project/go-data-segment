@@ -144,7 +144,7 @@ func (h *Hybrid) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	if len(h.data.subs)*SparseBlockSize*NodeSize > 16<<30 {
+	if len(h.data.subs)*SparseBlockSize*NodeSize > 1<<30 {
 		return xerrors.Errorf("too large map")
 	}
 
