@@ -4,13 +4,15 @@ import (
 	"bytes"
 	"io"
 
+	"github.com/hashicorp/go-multierror"
+	cid "github.com/ipfs/go-cid"
+	xerrors "golang.org/x/xerrors"
+
 	"github.com/filecoin-project/go-data-segment/fr32"
 	"github.com/filecoin-project/go-data-segment/merkletree"
 	"github.com/filecoin-project/go-data-segment/util"
 	commcid "github.com/filecoin-project/go-fil-commcid"
 	abi "github.com/filecoin-project/go-state-types/abi"
-	cid "github.com/ipfs/go-cid"
-	xerrors "golang.org/x/xerrors"
 )
 
 type Aggregate struct {
@@ -167,7 +169,82 @@ func (a Aggregate) IndexStartPosition() (uint64, error) {
 }
 
 func (a Aggregate) IndexSize() (abi.PaddedPieceSize, error) {
-	return abi.PaddedPieceSize(uint64(MaxIndexEntriesInDeal(a.DealSize)) * EntrySize), nil
+	size := abi.PaddedPieceSize(uint64(MaxIndexEntriesInDeal(a.DealSize)) * EntrySize)
+	if err := size.Validate(); err != nil {
+		return abi.PaddedPieceSize(1<<64 - 1), xerrors.Errorf("validating index size %v, report this: %w", size, err)
+	}
+	return size, nil
+}
+
+// AggregateStreamReader creates a reader for the whole aggregate, including the index.
+// The subPieceReaders should be passed in the same order as subdeals in the construction call
+// of the Aggregate.
+// AggregateStreamReader assumes a non-manipulated Index as created by the Aggregate constructor.
+func (a Aggregate) AggregateObjectReader(subPieceReaders []io.Reader) (io.Reader, error) {
+	if len(subPieceReaders) != len(a.Index.Entries) {
+		return nil, xerrors.Errorf("passed different number of subPieceReaders than subPieces: %d != %d", len(subPieceReaders), len(a.Index.Entries))
+	}
+	readers := []io.Reader{}
+	add := func(r ...io.Reader) {
+		readers = append(readers, r...)
+	}
+
+	offset := int64(0)
+	addPiece := func(r io.Reader, targetOffset, targetLength int64) error {
+		if offset > targetOffset {
+			return xerrors.Errorf("current aggregate offset is greater"+
+				" than expected offset from the index. %d > %d", offset, targetOffset)
+		}
+		if offset != targetOffset {
+			add(io.LimitReader(zeroReader{}, int64(targetOffset-offset)))
+		}
+
+		// NOTE: maybe some kind of check that the `r` was exhausted
+		add(io.LimitReader(io.MultiReader(r, zeroReader{}), int64(targetLength)))
+		offset = targetOffset + targetLength
+		return nil
+	}
+
+	var errs error
+	for i := 0; i < len(subPieceReaders); i++ {
+		spEntry := a.Index.Entries[i]
+		spOffset := spEntry.UnpaddedOffest()
+		spLen := spEntry.UnpaddedLength()
+
+		if err := addPiece(subPieceReaders[i], int64(spOffset), int64(spLen)); err != nil {
+			errs = multierror.Append(errs, err)
+		}
+	}
+
+	{
+		var indexErrs error
+		indexReader, err := a.IndexReader()
+		if err != nil {
+			indexErrs = multierror.Append(indexErrs, err)
+		}
+		indexStart, err := a.IndexStartPosition()
+		if err != nil {
+			indexErrs = multierror.Append(indexErrs, err)
+		}
+		indexLength, err := a.IndexSize()
+		if err != nil {
+			indexErrs = multierror.Append(indexErrs, err)
+		}
+		if indexErrs == nil {
+			if err := addPiece(indexReader,
+				int64(indexStart), int64(indexLength.Unpadded())); err != nil {
+				errs = multierror.Append(errs, err)
+			}
+		} else {
+			errs = multierror.Append(errs, indexErrs)
+		}
+	}
+
+	if errs != nil {
+		return nil, errs
+	}
+
+	return io.MultiReader(readers...), nil
 }
 
 // ComputeDealPlacement takes in PieceInfos with Comm and Size,
@@ -177,6 +254,9 @@ func ComputeDealPlacement(dealInfos []abi.PieceInfo) ([]merkletree.CommAndLoc, u
 	res := make([]merkletree.CommAndLoc, len(dealInfos))
 	offset := uint64(0)
 	for i, di := range dealInfos {
+		if err := di.Size.Validate(); err != nil {
+			return nil, 0, xerrors.Errorf("subpiece %d: size doesn't validate: %w", i, err)
+		}
 		sizeInNodes := uint64(di.Size) / merkletree.NodeSize
 		comm, err := commcid.CIDToPieceCommitmentV1(di.PieceCID)
 		if err != nil {
