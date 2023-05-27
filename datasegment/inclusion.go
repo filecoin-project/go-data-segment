@@ -136,14 +136,14 @@ func (ip InclusionProof) ComputeExpectedAuxData(veriferData InclusionVerifierDat
 	}, nil
 }
 
-func CollectInclusionProof(ht *merkletree.Hybrid, dealInfo merkletree.CommAndLoc, indexEntry int) (*InclusionProof, error) {
-	subTreeProof, err := ht.CollectProof(dealInfo.Loc.Level, dealInfo.Loc.Index)
+func CollectInclusionProof(ht *merkletree.Hybrid, dealSize abi.PaddedPieceSize, pieceInfo merkletree.CommAndLoc, indexEntry int) (*InclusionProof, error) {
+	subTreeProof, err := ht.CollectProof(pieceInfo.Loc.Level, pieceInfo.Loc.Index)
 	if err != nil {
 		return nil, xerrors.Errorf("collecting subtree proof: %w", err)
 	}
 
-	iAS := indexAreaStart(abi.PaddedPieceSize(1 << ht.MaxLevel()))
-	dsProof, err := ht.CollectProof(1, iAS/2+uint64(indexEntry))
+	iAS := indexAreaStart(dealSize)
+	dsProof, err := ht.CollectProof(1, iAS/EntrySize+uint64(indexEntry))
 	if err != nil {
 		return nil, xerrors.Errorf("collecting subtree proof: %w", err)
 	}

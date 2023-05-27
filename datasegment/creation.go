@@ -109,7 +109,7 @@ func (a Aggregate) ProofForPieceInfo(d abi.PieceInfo) (*InclusionProof, error) {
 func (a Aggregate) ProofForIndexEntry(idx int) (*InclusionProof, error) {
 	e := a.Index.Entries[idx]
 	commLoc := e.CommAndLoc()
-	ip, err := CollectInclusionProof(&a.Tree, commLoc, idx)
+	ip, err := CollectInclusionProof(&a.Tree, a.DealSize, commLoc, idx)
 	if err != nil {
 		return nil, xerrors.Errorf("collecting inclusion proof: %w", err)
 	}

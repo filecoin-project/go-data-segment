@@ -98,7 +98,7 @@ func TestComputeExpectedAuxData1(t *testing.T) {
 	}
 
 	for i, di := range col {
-		ip, err := CollectInclusionProof(ht, di, i)
+		ip, err := CollectInclusionProof(ht, SizePa, di, i)
 		require.NoError(t, err)
 		require.NotNil(t, ip)
 

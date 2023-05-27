@@ -7,9 +7,12 @@ import (
 	"os"
 	"testing"
 
+	"github.com/filecoin-project/go-data-segment/util"
+
 	commcid "github.com/filecoin-project/go-fil-commcid"
 	commp "github.com/filecoin-project/go-fil-commp-hashhash"
 	abi "github.com/filecoin-project/go-state-types/abi"
+
 	cid "github.com/ipfs/go-cid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -88,6 +91,7 @@ func TestAggregateObjectReader(t *testing.T) {
 	assert.NoError(t, err)
 
 	commp, paddedSize, err := commpHasher.Digest()
+	assert.NoError(t, err)
 	pieceCid := Must(commcid.PieceCommitmentV1ToCID(commp))
 	assert.Equal(t, uint64(dealSize), uint64(paddedSize))
 	assert.Equal(t, cid.MustParse("baga6ea4seaqnqkeoqevjjjfe46wo2lpfclcbmkyms4wkz5srou3vzmr3w3c72bq"), pieceCid)
@@ -106,7 +110,7 @@ func TestIndexCID(t *testing.T) {
 			Size:     abi.UnpaddedPieceSize(260096).Padded(),
 		},
 	}
-	dealSize := abi.PaddedPieceSize(1 << 20)
+	dealSize := abi.PaddedPieceSize(1 << 30)
 	a, err := NewAggregate(dealSize, pieceInfos)
 	assert.NoError(t, err)
 	assert.NotNil(t, a)
@@ -122,9 +126,73 @@ func TestIndexCID(t *testing.T) {
 	assert.NoError(t, err)
 
 	commp, paddedSize, err := commpHasher.Digest()
+	assert.NoError(t, err)
 	indexCID2 := Must(commcid.PieceCommitmentV1ToCID(commp))
 	assert.Equal(t, uint64(Must(a.IndexSize())), uint64(paddedSize))
 	assert.Equal(t, indexCID, indexCID2)
+}
+
+func TestProofForPieceInfo(t *testing.T) {
+	pieceInfos := []abi.PieceInfo{
+		{
+			PieceCID: cid.MustParse("baga6ea4seaqae5ysjdbsr4b5jhotaz5ooh62jrrdbxwygfpkkfjz44kvywycmgy"),
+			Size:     abi.UnpaddedPieceSize(520192).Padded(),
+		},
+		{
+			PieceCID: cid.MustParse("baga6ea4seaqnrm2n2g4m23t6rs26obxjw2tjtr7tcho24gepj2naqhevytduyoa"),
+			Size:     abi.UnpaddedPieceSize(260096).Padded(),
+		},
+	}
+	dealSize := abi.PaddedPieceSize(1 << 30)
+	a, err := NewAggregate(dealSize, pieceInfos)
+	assert.NoError(t, err)
+	assert.NotNil(t, a)
+
+	for _, pi := range pieceInfos {
+		proof, err := a.ProofForPieceInfo(pi)
+		assert.NoError(t, err)
+		ia, err := proof.ComputeExpectedAuxData(VerifierDataForPieceInfo(pi))
+		assert.NoError(t, err)
+		assert.Equal(t, Must(a.PieceCID()), ia.CommPa)
+	}
+}
+
+func TestAlvin(t *testing.T) {
+	pieceInfos := []abi.PieceInfo{
+		{
+			PieceCID: cid.MustParse("baga6ea4seaqhiopmpmv2iztddng5ado4dm4yzzv22yfe6vhr7rtsth6lkwym6ki"),
+			Size:     abi.PaddedPieceSize(524288),
+		},
+		{
+			PieceCID: cid.MustParse("baga6ea4seaqnv5iuavkp6dx645qy2h4qiqptnmbshduvdbwlfvj7mk7yz7lr6dy"),
+			Size:     abi.PaddedPieceSize(524288),
+		},
+		{
+			PieceCID: cid.MustParse("baga6ea4seaqjikavnkvhiy73eyhhm7nmki2v7iqq3eivxyzfiezspivfydblala"),
+			Size:     abi.PaddedPieceSize(524288),
+		},
+		{
+			PieceCID: cid.MustParse("baga6ea4seaqk4ezncvnugzxhuafadt5jep5vn4izylh772jtlopiufymbu4dmlq"),
+			Size:     abi.PaddedPieceSize(524288),
+		},
+		{
+			PieceCID: cid.MustParse("baga6ea4seaqfusknxkmyf6ehrz5keq3ij65hmz2i5hyk2cxbmo4s7pujbzrqccq"),
+			Size:     abi.PaddedPieceSize(524288),
+		},
+	}
+
+	dealSize := abi.PaddedPieceSize(Must(util.CeilPow2(5 * 524288)))
+	a, err := NewAggregate(dealSize, pieceInfos)
+	assert.NoError(t, err)
+	require.NotNil(t, a)
+
+	for _, pi := range pieceInfos {
+		proof, err := a.ProofForPieceInfo(pi)
+		assert.NoError(t, err)
+		ia, err := proof.ComputeExpectedAuxData(VerifierDataForPieceInfo(pi))
+		require.NoError(t, err)
+		assert.Equal(t, Must(a.PieceCID()), ia.CommPa)
+	}
 }
 
 func TestAggregateSample(t *testing.T) {
@@ -164,7 +232,7 @@ func TestAggregateSample(t *testing.T) {
 	fmt.Fprintf(f, "Piece size: %dB\n", nbytes)
 	fmt.Fprintf(f, "Piece size in bytes: %d\n", nbytes)
 
-	f, err = os.CreateTemp(t.TempDir(), "deal-*.data")
+	f, err = os.Create("testdata/sample_aggregate/deal.data")
 	require.NoError(t, err)
 	err = f.Truncate(int64(abi.PaddedPieceSize(dealSize).Unpadded()))
 	require.NoError(t, err)
@@ -200,25 +268,12 @@ func TestAggregateSample(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, int64(index_size.Unpadded()), nbytes)
 	}
-	{
-		_, err = f.Seek(0, os.SEEK_SET)
-		require.NoError(t, err)
-		ff, err := os.Create("testdata/sample_aggregate/deal.data")
-
-		_, err = io.Copy(ff, f)
-		require.NoError(t, err)
-
-		err = ff.Close()
-		require.NoError(t, err)
-	}
 
 	{
 		indexStart := DataSegmentIndexStartOffset(dealSize)
-		dealData, err := os.Open("testdata/sample_aggregate/deal.data")
-		require.NoError(t, err)
-		dealData.Seek(int64(indexStart), os.SEEK_SET)
+		f.Seek(int64(indexStart), os.SEEK_SET)
 
-		indexData, err := ParseDataSegmentIndex(dealData)
+		indexData, err := ParseDataSegmentIndex(f)
 		require.NoError(t, err)
 		assert.Equal(t, Must(a.Index.ValidEntries()), Must(indexData.ValidEntries()))
 	}
@@ -233,11 +288,11 @@ func TestAggregateSample(t *testing.T) {
 	assert.NoError(t, err)
 	indexJson.Close()
 
-	dealData, err := os.Open("testdata/sample_aggregate/deal.data")
+	_, err = f.Seek(0, io.SeekStart)
 	require.NoError(t, err)
 
 	commpHasher := commp.Calc{}
-	_, err = io.CopyBuffer(&commpHasher, dealData, make([]byte, commpHasher.BlockSize()*128))
+	_, err = io.CopyBuffer(&commpHasher, f, make([]byte, commpHasher.BlockSize()*128))
 	assert.NoError(t, err)
 
 	commp, paddedSize, err := commpHasher.Digest()
