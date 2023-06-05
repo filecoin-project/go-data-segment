@@ -260,10 +260,10 @@ func (sd SegmentDesc) Validate() error {
 		return validationError("computed checksum does not match embedded checksum")
 	}
 	if sd.Offset%128 != 0 {
-		return validationError("offset is not aligned in unpadded data")
+		return validationError("offset is not aligned in padded data")
 	}
 	if sd.Size%128 != 0 {
-		return validationError("size is not aligned in unpadded data")
+		return validationError("size is not aligned in padded data")
 	}
 	return nil
 }
