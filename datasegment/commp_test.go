@@ -16,6 +16,7 @@ func TestLightCommP2Cid(t *testing.T) {
 	c1, err := commcid.PieceCommitmentV1ToCID(node[:])
 	assert.NoError(t, err)
 	c2, err := lightCommP2Cid(node)
+	assert.NoError(t, err)
 
 	assert.Equal(t, c1, c2)
 }
@@ -28,6 +29,7 @@ func TestLightCid2CommP(t *testing.T) {
 	c, err := commcid.PieceCommitmentV1ToCID(node[:])
 	assert.NoError(t, err)
 	n1, err := lightCid2CommP(c)
+	assert.NoError(t, err)
 
 	assert.Equal(t, node, n1)
 

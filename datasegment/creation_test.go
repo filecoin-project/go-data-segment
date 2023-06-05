@@ -55,6 +55,7 @@ func TestAggregateCreation(t *testing.T) {
 
 	for _, pi := range subPieceInfos {
 		ip, err := a.ProofForPieceInfo(pi)
+		assert.NoError(t, err)
 		aux, err := ip.ComputeExpectedAuxData(VerifierDataForPieceInfo(pi))
 		assert.NoError(t, err)
 		assert.Equal(t, InclusionAuxData{CommPa: pcid, SizePa: a.DealSize}, *aux)
@@ -238,7 +239,8 @@ func TestAggregateSample(t *testing.T) {
 	require.NoError(t, err)
 
 	{
-		_, err = f.Seek(int64(a.Index.Entries[0].UnpaddedOffest()), os.SEEK_SET)
+		_, err = f.Seek(int64(a.Index.Entries[0].UnpaddedOffest()), io.SeekStart)
+		require.NoError(t, err)
 		p0, err := os.Open("testdata/sample_aggregate/cat.png.car")
 		require.NoError(t, err)
 		_, err = io.Copy(f, p0)
@@ -247,7 +249,7 @@ func TestAggregateSample(t *testing.T) {
 	{
 		p1, err := os.Open("testdata/sample_aggregate/Verifiable Data Aggregation.png.car")
 		require.NoError(t, err)
-		_, err = f.Seek(int64(a.Index.Entries[1].UnpaddedOffest()), os.SEEK_SET)
+		_, err = f.Seek(int64(a.Index.Entries[1].UnpaddedOffest()), io.SeekStart)
 		require.NoError(t, err)
 		_, err = io.Copy(f, p1)
 		require.NoError(t, err)
@@ -257,7 +259,7 @@ func TestAggregateSample(t *testing.T) {
 	{
 		index_start, err := a.IndexStartPosition()
 		require.NoError(t, err)
-		_, err = f.Seek(int64(index_start), os.SEEK_SET)
+		_, err = f.Seek(int64(index_start), io.SeekStart)
 		require.NoError(t, err)
 		r, err := a.IndexReader()
 		require.NoError(t, err)
@@ -271,7 +273,7 @@ func TestAggregateSample(t *testing.T) {
 
 	{
 		indexStart := DataSegmentIndexStartOffset(dealSize)
-		f.Seek(int64(indexStart), os.SEEK_SET)
+		f.Seek(int64(indexStart), io.SeekStart)
 
 		indexData, err := ParseDataSegmentIndex(f)
 		require.NoError(t, err)
@@ -296,6 +298,7 @@ func TestAggregateSample(t *testing.T) {
 	assert.NoError(t, err)
 
 	commp, paddedSize, err := commpHasher.Digest()
+	assert.NoError(t, err)
 	pieceCid := Must(commcid.PieceCommitmentV1ToCID(commp))
 	assert.Equal(t, uint64(dealSize), uint64(paddedSize))
 	assert.Equal(t, cid.MustParse("baga6ea4seaqnqkeoqevjjjfe46wo2lpfclcbmkyms4wkz5srou3vzmr3w3c72bq"),
