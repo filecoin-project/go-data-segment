@@ -18,12 +18,31 @@ func DataSegmentIndexStartOffset(dealSize abi.PaddedPieceSize) uint64 {
 	return uint64(dealSize.Unpadded()) - fromBack
 }
 
-// ParseDataSegmentIndex takes in a reader of of unppaded deal data, it should start at offset
-// returned by DataSegmentIndexStartOffset
-// After parsing use IndexData#ValidEntries() to gather valid data segments
+// ParseDataSegmentIndex is a synchronous API on top of ParseDataSegmentIndexAsync
 func ParseDataSegmentIndex(unpaddedReader io.Reader) (IndexData, error) {
 	allEntries := []SegmentDesc{}
+	results := make(chan SegmentDesc)
+	var err error
+	go func() {
+		err = ParseDataSegmentIndexAsync(unpaddedReader, results)
+		close(results)
+	}()
 
+	for res := range results {
+		allEntries = append(allEntries, res)
+	}
+
+	if err != nil {
+		return IndexData{}, err
+	}
+
+	return IndexData{Entries: allEntries}, nil
+}
+
+// ParseDataSegmentIndexAsync takes in a reader of of unppaded deal data, it should start at offset
+// returned by DataSegmentIndexStartOffset
+// After parsing use IndexData#ValidEntries() to gather valid data segments
+func ParseDataSegmentIndexAsync(unpaddedReader io.Reader, results chan<- SegmentDesc) error {
 	unpaddedBuf := make([]byte, 127)
 	paddedBuf := make([]byte, 128)
 	for {
@@ -32,7 +51,7 @@ func ParseDataSegmentIndex(unpaddedReader io.Reader) (IndexData, error) {
 			if errors.Is(err, io.EOF) {
 				break
 			} else {
-				return IndexData{}, xerrors.Errorf("reading 127 bytes from parsing: %w", err)
+				return xerrors.Errorf("reading 127 bytes from parsing: %w", err)
 			}
 		}
 
@@ -42,8 +61,9 @@ func ParseDataSegmentIndex(unpaddedReader io.Reader) (IndexData, error) {
 		en1.UnmarshalBinary(paddedBuf[:EntrySize])
 		en2 := SegmentDesc{}
 		en2.UnmarshalBinary(paddedBuf[EntrySize:])
-		allEntries = append(allEntries, en1, en2)
+		results <- en1
+		results <- en2
 	}
 
-	return IndexData{Entries: allEntries}, nil
+	return nil
 }
