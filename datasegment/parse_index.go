@@ -1,6 +1,7 @@
 package datasegment
 
 import (
+	"context"
 	"errors"
 	"io"
 
@@ -21,15 +22,15 @@ func DataSegmentIndexStartOffset(dealSize abi.PaddedPieceSize) uint64 {
 // ParseDataSegmentIndex is a synchronous API on top of ParseDataSegmentIndexAsync
 func ParseDataSegmentIndex(unpaddedReader io.Reader) (IndexData, error) {
 	allEntries := []SegmentDesc{}
-	results := make(chan SegmentDesc)
+	results := make(chan *SegmentDesc)
 	var err error
 	go func() {
-		err = ParseDataSegmentIndexAsync(unpaddedReader, results)
+		err = ParseDataSegmentIndexAsync(context.Background(), unpaddedReader, results)
 		close(results)
 	}()
 
 	for res := range results {
-		allEntries = append(allEntries, res)
+		allEntries = append(allEntries, *res)
 	}
 
 	if err != nil {
@@ -42,28 +43,31 @@ func ParseDataSegmentIndex(unpaddedReader io.Reader) (IndexData, error) {
 // ParseDataSegmentIndexAsync takes in a reader of of unppaded deal data, it should start at offset
 // returned by DataSegmentIndexStartOffset
 // After parsing use IndexData#ValidEntries() to gather valid data segments
-func ParseDataSegmentIndexAsync(unpaddedReader io.Reader, results chan<- SegmentDesc) error {
+func ParseDataSegmentIndexAsync(ctx context.Context, unpaddedReader io.Reader, results chan<- *SegmentDesc) error {
 	unpaddedBuf := make([]byte, 127)
 	paddedBuf := make([]byte, 128)
 	for {
-		_, err := io.ReadFull(unpaddedReader, unpaddedBuf)
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				break
-			} else {
-				return xerrors.Errorf("reading 127 bytes from parsing: %w", err)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			_, err := io.ReadFull(unpaddedReader, unpaddedBuf)
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					return nil
+				} else {
+					return xerrors.Errorf("reading 127 bytes from parsing: %w", err)
+				}
 			}
+
+			fr32.Pad(unpaddedBuf, paddedBuf)
+
+			en1 := SegmentDesc{}
+			en1.UnmarshalBinary(paddedBuf[:EntrySize])
+			en2 := SegmentDesc{}
+			en2.UnmarshalBinary(paddedBuf[EntrySize:])
+			results <- &en1
+			results <- &en2
 		}
-
-		fr32.Pad(unpaddedBuf, paddedBuf)
-
-		en1 := SegmentDesc{}
-		en1.UnmarshalBinary(paddedBuf[:EntrySize])
-		en2 := SegmentDesc{}
-		en2.UnmarshalBinary(paddedBuf[EntrySize:])
-		results <- en1
-		results <- en2
 	}
-
-	return nil
 }
