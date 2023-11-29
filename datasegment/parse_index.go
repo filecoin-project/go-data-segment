@@ -53,7 +53,7 @@ func ParseDataSegmentIndexAsync(ctx context.Context, unpaddedReader io.Reader, r
 		default:
 			_, err := io.ReadFull(unpaddedReader, unpaddedBuf)
 			if err != nil {
-				if errors.Is(err, io.EOF) {
+				if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 					return nil
 				} else {
 					return xerrors.Errorf("reading 127 bytes from parsing: %w", err)
