@@ -77,7 +77,7 @@ func newBareTree(leafs uint64) *TreeData {
 // Then decoding the tree, bottom-up, starting with the leafs as the amount of nodes in one level defines the amount of nodes in its parent level
 // NOTE that correctness of the tree is NOT validated as part of this method
 func DeserializeTree(tree []byte) (*TreeData, error) {
-	if tree == nil || len(tree) < BytesInInt {
+	if len(tree) < BytesInInt {
 		return nil, xerrors.New("no tree encoded")
 	}
 	lvlSize := binary.LittleEndian.Uint64(tree[:BytesInInt])
