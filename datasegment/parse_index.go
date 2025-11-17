@@ -1,12 +1,13 @@
 package datasegment
 
 import (
-	"errors"
-	"io"
-
+	"fmt"
 	"github.com/filecoin-project/go-data-segment/fr32"
 	abi "github.com/filecoin-project/go-state-types/abi"
-	xerrors "golang.org/x/xerrors"
+	"golang.org/x/xerrors"
+	"io"
+	"runtime"
+	"sync"
 )
 
 // DataSegmentIndexStartOffset takes in the padded size of the deal and returns the starting offset
@@ -14,7 +15,7 @@ import (
 func DataSegmentIndexStartOffset(dealSize abi.PaddedPieceSize) uint64 {
 	mie := MaxIndexEntriesInDeal(dealSize)
 	fromBack := uint64(mie) * uint64(EntrySize)
-	fromBack = fromBack - fromBack/128 // safe because EntrySize = 64 and min(MaxIndexEntriesInDeal(x)) = 4
+	fromBack = fromBack - fromBack/128 // safe because EntrySize = 256 and min(MaxIndexEntriesInDeal(x)) = 4
 	return uint64(dealSize.Unpadded()) - fromBack
 }
 
@@ -22,27 +23,81 @@ func DataSegmentIndexStartOffset(dealSize abi.PaddedPieceSize) uint64 {
 // returned by DataSegmentIndexStartOffset
 // After parsing use IndexData#ValidEntries() to gather valid data segments
 func ParseDataSegmentIndex(unpaddedReader io.Reader) (IndexData, error) {
-	allEntries := []SegmentDesc{}
+	const (
+		unpaddedChunk = 127
+		paddedChunk   = 128
+	)
 
-	unpaddedBuf := make([]byte, 127)
-	paddedBuf := make([]byte, 128)
-	for {
-		_, err := io.ReadFull(unpaddedReader, unpaddedBuf)
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				break
-			} else {
-				return IndexData{}, xerrors.Errorf("reading 127 bytes from parsing: %w", err)
-			}
+	// Read all unpadded data (up to 32 MiB Max as per FRC for 64 GiB sector)
+	unpaddedData, err := io.ReadAll(unpaddedReader)
+	if err != nil {
+		return IndexData{}, xerrors.Errorf("reading unpadded data: %w", err)
+	}
+
+	// Make sure it's aligned to 127
+	if len(unpaddedData)%unpaddedChunk != 0 {
+		return IndexData{}, fmt.Errorf("unpadded data length %d is not a multiple of 127", len(unpaddedData))
+	}
+	numChunks := len(unpaddedData) / unpaddedChunk
+
+	// Prepare padded output buffer
+	paddedData := make([]byte, numChunks*paddedChunk)
+
+	// Parallel pad
+	var wg sync.WaitGroup
+	concurrency := runtime.NumCPU()
+	chunkPerWorker := (numChunks + concurrency - 1) / concurrency
+
+	for w := 0; w < concurrency; w++ {
+		start := w * chunkPerWorker
+		end := (w + 1) * chunkPerWorker
+		if end > numChunks {
+			end = numChunks
 		}
+		wg.Add(1)
+		go func(start, end int) {
+			defer wg.Done()
+			for i := start; i < end; i++ {
+				in := unpaddedData[i*unpaddedChunk : (i+1)*unpaddedChunk]
+				out := paddedData[i*paddedChunk : (i+1)*paddedChunk]
+				fr32.Pad(in, out)
+			}
+		}(start, end)
+	}
+	wg.Wait()
 
-		fr32.Pad(unpaddedBuf, paddedBuf)
-
-		en1 := SegmentDesc{}
-		en1.UnmarshalBinary(paddedBuf[:EntrySize])
-		en2 := SegmentDesc{}
-		en2.UnmarshalBinary(paddedBuf[EntrySize:])
-		allEntries = append(allEntries, en1, en2)
+	// Decode entries
+	// MarshalBinary() returns EntrySize (256 bytes) per entry in post-Fr32 format
+	// IndexReader() unpads the entire block: 256 bytes -> 254 bytes per entry
+	// So we need to pad back to 256 bytes per entry to unmarshal
+	unpaddedEntrySize := (uint64(EntrySize) / 128) * 127 // 2 * 127 = 254 bytes
+	numEntries := uint64(len(unpaddedData)) / unpaddedEntrySize
+	
+	// Pre-allocate entries slice to hold all entries (including zero-filled ones)
+	allEntries := make([]SegmentDesc, numEntries)
+	
+	// Each entry spans 2 padded chunks (256 bytes = 2 * 128)
+	// After unpadding: 254 bytes = 2 * 127
+	// After repadding: 256 bytes = 2 * 128
+	for i := uint64(0); i < numEntries; i++ {
+		// Each entry in unpadded format is 254 bytes (2 * 127)
+		// After Fr32 padding, it becomes 256 bytes (2 * 128)
+		// The paddedData already contains the correctly padded entries
+		entryStartPadded := i * EntrySize // Each entry is EntrySize (256) bytes after padding
+		if entryStartPadded+EntrySize > uint64(len(paddedData)) {
+			// Not enough padded data, leave as zero value
+			continue
+		}
+		
+		entryData := paddedData[entryStartPadded : entryStartPadded+EntrySize]
+		
+		// Always try to unmarshal, even if it might be zero-filled
+		// ValidEntries() will filter out invalid ones
+		if err := allEntries[i].UnmarshalBinary(entryData); err != nil {
+			// If unmarshal fails, leave as zero value
+			// This will be filtered out by ValidEntries()
+			continue
+		}
 	}
 
 	return IndexData{Entries: allEntries}, nil

@@ -57,16 +57,24 @@ func NewAggregate(dealSize abi.PaddedPieceSize, subdeals []abi.PieceInfo) (*Aggr
 	}
 
 	indexStartNodes := indexAreaStart(dealSize) / merkletree.NodeSize
-	batch := make([]merkletree.CommAndLoc, 2*len(index.Entries))
+	batch := make([]merkletree.CommAndLoc, 4*len(index.Entries))
 	for i, e := range index.Entries {
 		ns := e.IntoNodes()
-		batch[2*i] = merkletree.CommAndLoc{
+		batch[4*i] = merkletree.CommAndLoc{
 			Comm: ns[0],
-			Loc:  merkletree.Location{Level: 0, Index: indexStartNodes + 2*uint64(i)},
+			Loc:  merkletree.Location{Level: 0, Index: indexStartNodes + 4*uint64(i)},
 		}
-		batch[2*i+1] = merkletree.CommAndLoc{
+		batch[4*i+1] = merkletree.CommAndLoc{
 			Comm: ns[1],
-			Loc:  merkletree.Location{Level: 0, Index: indexStartNodes + 2*uint64(i) + 1},
+			Loc:  merkletree.Location{Level: 0, Index: indexStartNodes + 4*uint64(i) + 1},
+		}
+		batch[4*i+2] = merkletree.CommAndLoc{
+			Comm: ns[2],
+			Loc:  merkletree.Location{Level: 0, Index: indexStartNodes + 4*uint64(i) + 2},
+		}
+		batch[4*i+3] = merkletree.CommAndLoc{
+			Comm: ns[3],
+			Loc:  merkletree.Location{Level: 0, Index: indexStartNodes + 4*uint64(i) + 3},
 		}
 	}
 	err = ht.BatchSet(batch)

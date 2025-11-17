@@ -55,12 +55,14 @@ func TestValidateEntry(t *testing.T) {
 		sd  SegmentDesc
 		err string
 	}{
-		{sd: SegmentDesc{Offset: 0, Size: 0}.withUpdatedChecksum()},
-		{sd: SegmentDesc{Offset: 128, Size: 128 * 3249}.withUpdatedChecksum()},
-		{sd: SegmentDesc{Offset: 128 * 323221, Size: 128 * 3249}.withUpdatedChecksum()},
-		{sd: SegmentDesc{Offset: 128*323221 + 1, Size: 128 * 3249}.withUpdatedChecksum(), err: "offset"},
-		{sd: SegmentDesc{Offset: 128 * 323221, Size: 128*3249 + 1}.withUpdatedChecksum(), err: "size"},
-		{sd: SegmentDesc{Offset: 128 * 323221, Size: 128 * 3249}, err: "checksum"},
+		{sd: SegmentDesc{Offset: 0, Size: 0, RawSize: 0, Multicodec: MulticodecRaw}.withUpdatedChecksum()},
+		{sd: SegmentDesc{Offset: 128, Size: 128 * 3249, RawSize: 128 * 3249, Multicodec: MulticodecRaw}.withUpdatedChecksum()},
+		{sd: SegmentDesc{Offset: 128 * 323221, Size: 128 * 3249, RawSize: 128 * 3249, Multicodec: MulticodecRaw}.withUpdatedChecksum()},
+		// v2: flexible alignment, so offset/size alignment checks are removed
+		// These test cases now pass validation (no alignment errors)
+		{sd: SegmentDesc{Offset: 128*323221 + 1, Size: 128 * 3249, RawSize: 128 * 3249, Multicodec: MulticodecRaw}.withUpdatedChecksum()},
+		{sd: SegmentDesc{Offset: 128 * 323221, Size: 128*3249 + 1, RawSize: 128*3249 + 1, Multicodec: MulticodecRaw}.withUpdatedChecksum()},
+		{sd: SegmentDesc{Offset: 128 * 323221, Size: 128 * 3249, RawSize: 128 * 3249, Multicodec: MulticodecRaw}, err: "checksum"},
 	}
 
 	for i, tc := range tests {
@@ -95,7 +97,8 @@ func TestIndexSerializationValidation(t *testing.T) {
 func TestIndexSerialization(t *testing.T) {
 	index := invalidIndex()
 	assert.Equal(t, 2, index.NumberEntries())
-	assert.Equal(t, uint64(2*64), index.IndexSize())
+	// v2: each entry is 256 bytes (4 nodes * 32 bytes) instead of 128 bytes (2 nodes * 32 bytes)
+	assert.Equal(t, uint64(2*EntrySize), index.IndexSize())
 	encoded, err := index.MarshalBinary()
 	assert.NoError(t, err)
 	assert.NotNil(t, encoded)

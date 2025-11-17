@@ -35,7 +35,16 @@ func (ve validationError) Is(err error) bool {
 
 const ChecksumSize = 16
 
-const EntrySize = merkletree.NodeSize + 2*BytesInInt + ChecksumSize
+// EntrySize is the size of a Data Segment Index Entry v2
+// v2 entries are 256 bytes after Fr32 padding (4 nodes of 32 bytes each)
+// Pre-Fr32 size is 4 * 32 = 128 bytes, but we use 256 bytes to align to boundary
+const EntrySize = 4 * merkletree.NodeSize // 256 bytes (4 nodes)
+
+// Multicodec values
+const (
+	MulticodecRaw = 0x55   // Raw binary data
+	MulticodecCAR = 0x0202 // CAR format (IPLD)
+)
 
 // MaxIndexEntriesInDeal defines the maximum number of index entries in for a given size of a deal
 func MaxIndexEntriesInDeal(dealSize abi.PaddedPieceSize) uint {
@@ -63,10 +72,18 @@ func MakeIndex(entries []SegmentDesc) (*IndexData, error) {
 func MakeIndexFromCommLoc(dealInfos []merkletree.CommAndLoc) (*IndexData, error) {
 	entries := make([]SegmentDesc, 0, len(dealInfos))
 	for _, di := range dealInfos {
+		size := 1 << di.Loc.Level * merkletree.NodeSize
 		sd := SegmentDesc{
-			CommDs: di.Comm,
-			Offset: di.Loc.LeafIndex() * merkletree.NodeSize,
-			Size:   1 << di.Loc.Level * merkletree.NodeSize,
+			CommDs:              di.Comm,
+			Offset:              di.Loc.LeafIndex() * merkletree.NodeSize,
+			Size:                uint64(size),
+			RawSize:             uint64(size), // Default to size for v1 compatibility
+			Multicodec:          MulticodecRaw,
+			MulticodecDependent: merkletree.Node{},
+			ACLType:             0,
+			ACLData:             0,
+			Reserved:            [7]byte{},
+			Checksum:            [ChecksumSize]byte{},
 		}
 		sd.Checksum = sd.computeChecksum()
 		entries = append(entries, sd)
@@ -143,15 +160,29 @@ func (id IndexData) ValidEntries() ([]SegmentDesc, error) {
 	return res, nil
 }
 
-// SegmentDesc contains a data segment description to be contained as two Fr32 elements in 2 leaf nodes of the data segment index
+// SegmentDesc contains a data segment description (v2 format)
+// to be contained as four Fr32 elements in 4 leaf nodes of the data segment index
 type SegmentDesc struct {
 	// Commitment to the data segment (Merkle node which is the root of the subtree containing all the nodes making up the data segment)
 	CommDs merkletree.Node
-	// Ofset is the offset from the start of the deal in padded bytes
+	// Offset is the offset from the start of the deal in pre-Fr32-padding bytes
 	Offset uint64
-	// Size is the number of padded bytes that is contained in the sub-deal reflected by this SegmentDesc
+	// Size is the number of pre-Fr32-padding bytes that is contained in the sub-deal (including padding)
 	Size uint64
-	// Checksum is a 126 bit checksum (SHA256) computes on CommDs || Offset || Size
+	// RawSize is the actual size of the meaningful data before any trailing padding (pre-Fr32-padding)
+	RawSize uint64
+	// Multicodec identifies the content encoding format (0x55 = Raw, 0x0202 = CAR)
+	Multicodec uint64
+	// MulticodecDependent is extension space for multicodec-specific metadata
+	// For Raw and CAR codecs, this MUST be zero
+	MulticodecDependent merkletree.Node
+	// ACLType is the ACL type indicator (0 = no ACL, other values specified in future FRC)
+	ACLType uint8
+	// ACLData is ACL type-specific data (MUST be zero when ACLType is 0)
+	ACLData uint64
+	// Reserved is reserved for future versions of this FRC (MUST be zero in this version)
+	Reserved [7]byte // 56 bits = 7 bytes
+	// Checksum is a 126 bit checksum (SHA256) computed on all fields above with checksum bits set to zero
 	Checksum [ChecksumSize]byte
 }
 
@@ -212,19 +243,37 @@ func (sd SegmentDesc) MarshalBinary() ([]byte, error) {
 
 func (sd *SegmentDesc) UnmarshalBinary(data []byte) error {
 	if len(data) != EntrySize {
-		return xerrors.Errorf("invalid segment description size")
+		return xerrors.Errorf("invalid segment description size: expected %d, got %d", EntrySize, len(data))
 	}
 	le := binary.LittleEndian
 
 	*sd = SegmentDesc{}
-	sd.CommDs = *(*merkletree.Node)(data)
-	sd.Offset = le.Uint64(data[merkletree.NodeSize:])
-	sd.Size = le.Uint64(data[merkletree.NodeSize+8:])
-	sd.Checksum = *(*[ChecksumSize]byte)(data[merkletree.NodeSize+8+8:])
+	// Node 1: CommDS (32 bytes)
+	sd.CommDs = *(*merkletree.Node)(data[:merkletree.NodeSize])
 
-	if len(data[merkletree.NodeSize+8+8+ChecksumSize:]) != 0 {
-		panic("sanity check, should have consumed all")
-	}
+	// Node 2: Offset (8 bytes) + Size (8 bytes) + RawSize (8 bytes, but only 62 bits used) + Multicodec (8 bytes)
+	offset := merkletree.NodeSize
+	sd.Offset = le.Uint64(data[offset:])
+	offset += 8
+	sd.Size = le.Uint64(data[offset:])
+	offset += 8
+	sd.RawSize = le.Uint64(data[offset:]) & 0x3FFFFFFFFFFFFFFF // Mask to 62 bits
+	offset += 8
+	sd.Multicodec = le.Uint64(data[offset:])
+	offset += 8
+
+	// Node 3: MulticodecDependent (32 bytes)
+	sd.MulticodecDependent = *(*merkletree.Node)(data[offset:])
+	offset += merkletree.NodeSize
+
+	// Node 4: ACLType (1 byte) + ACLData (8 bytes) + Reserved (7 bytes) + Checksum (16 bytes)
+	sd.ACLType = data[offset]
+	offset += 1
+	sd.ACLData = le.Uint64(data[offset:])
+	offset += 8
+	copy(sd.Reserved[:], data[offset:offset+7])
+	offset += 7
+	copy(sd.Checksum[:], data[offset:offset+ChecksumSize])
 
 	return nil
 }
@@ -241,52 +290,119 @@ func (sd SegmentDesc) SerializeFr32Into(slice []byte) {
 	_ = slice[EntrySize-1]
 
 	le := binary.LittleEndian
-	copy(slice, sd.CommDs[:])
-	le.PutUint64(slice[merkletree.NodeSize:], sd.Offset)
-	le.PutUint64(slice[merkletree.NodeSize+8:], sd.Size)
-	copy(slice[merkletree.NodeSize+16:], sd.Checksum[:])
+	offset := 0
+
+	// Node 1: CommDS (32 bytes)
+	copy(slice[offset:], sd.CommDs[:])
+	offset += merkletree.NodeSize
+
+	// Node 2: Offset (8 bytes) + Size (8 bytes) + RawSize (8 bytes, 62 bits used) + Multicodec (8 bytes)
+	le.PutUint64(slice[offset:], sd.Offset)
+	offset += 8
+	le.PutUint64(slice[offset:], sd.Size)
+	offset += 8
+	// RawSize: only 62 bits, mask upper 2 bits
+	le.PutUint64(slice[offset:], sd.RawSize&0x3FFFFFFFFFFFFFFF)
+	offset += 8
+	le.PutUint64(slice[offset:], sd.Multicodec)
+	offset += 8
+
+	// Node 3: MulticodecDependent (32 bytes)
+	copy(slice[offset:], sd.MulticodecDependent[:])
+	offset += merkletree.NodeSize
+
+	// Node 4: ACLType (1 byte) + ACLData (8 bytes) + Reserved (7 bytes) + Checksum (16 bytes)
+	slice[offset] = sd.ACLType
+	offset += 1
+	le.PutUint64(slice[offset:], sd.ACLData)
+	offset += 8
+	copy(slice[offset:], sd.Reserved[:])
+	offset += 7
+	copy(slice[offset:], sd.Checksum[:])
 }
 
-func (sd SegmentDesc) IntoNodes() [2]merkletree.Node {
+func (sd SegmentDesc) IntoNodes() [4]merkletree.Node {
 	res := sd.SerializeFr32()
-	return [2]merkletree.Node{
+	return [4]merkletree.Node{
 		*(*merkletree.Node)(res[:merkletree.NodeSize]),
-		*(*merkletree.Node)(res[merkletree.NodeSize:]),
+		*(*merkletree.Node)(res[merkletree.NodeSize : 2*merkletree.NodeSize]),
+		*(*merkletree.Node)(res[2*merkletree.NodeSize : 3*merkletree.NodeSize]),
+		*(*merkletree.Node)(res[3*merkletree.NodeSize : 4*merkletree.NodeSize]),
 	}
 }
 
 func (sd SegmentDesc) Validate() error {
+	// Validate checksum
 	if sd.computeChecksum() != sd.Checksum {
 		return validationError("computed checksum does not match embedded checksum")
 	}
-	if sd.Offset%128 != 0 {
-		return validationError("offset is not aligned in padded data")
+
+	// Validate RawSize <= Size
+	if sd.RawSize > sd.Size {
+		return validationError("rawSize must be <= size")
 	}
-	if sd.Size%128 != 0 {
-		return validationError("size is not aligned in padded data")
+
+	// Validate Multicodec (must be supported: Raw or CAR)
+	if sd.Multicodec != MulticodecRaw && sd.Multicodec != MulticodecCAR {
+		return validationError("multicodec must be 0x55 (Raw) or 0x0202 (CAR)")
 	}
+
+	// Validate MulticodecDependent is zero for Raw and CAR codecs
+	var zeroNode merkletree.Node
+	if sd.MulticodecDependent != zeroNode {
+		return validationError("multicodecDependent must be zero for Raw and CAR codecs")
+	}
+
+	// Validate ACLType and ACLData
+	if sd.ACLType == 0 {
+		if sd.ACLData != 0 {
+			return validationError("aclData must be zero when aclType is 0")
+		}
+	}
+
+	// Validate Reserved field is zero
+	for i := range sd.Reserved {
+		if sd.Reserved[i] != 0 {
+			return validationError("reserved field must be zero")
+		}
+	}
+
+	// Note: Offset and Size alignment checks removed for v2 as flexible alignment is allowed
+	// The specification recommends 127-byte alignment but allows arbitrary alignment
+
 	return nil
 }
 
 // ==============================
 
-func (ds SegmentDesc) MakeNode() (merkletree.Node, merkletree.Node, error) {
+func (ds SegmentDesc) MakeNode() (merkletree.Node, merkletree.Node, merkletree.Node, merkletree.Node, error) {
 	buf := new(bytes.Buffer)
 	err := serializeFr32Entry(buf, &ds)
 	data := buf.Bytes()
 	if err != nil {
-		return merkletree.Node{}, merkletree.Node{}, err
+		return merkletree.Node{}, merkletree.Node{}, merkletree.Node{}, merkletree.Node{}, err
+	}
+	if len(data) < 4*fr32.BytesNeeded {
+		return merkletree.Node{}, merkletree.Node{}, merkletree.Node{}, merkletree.Node{}, xerrors.Errorf("insufficient data for 4 nodes")
 	}
 	node1 := *(*merkletree.Node)(data[:fr32.BytesNeeded])
-	node2 := *(*merkletree.Node)(data[fr32.BytesNeeded:])
-	return node1, node2, nil
+	node2 := *(*merkletree.Node)(data[fr32.BytesNeeded : 2*fr32.BytesNeeded])
+	node3 := *(*merkletree.Node)(data[2*fr32.BytesNeeded : 3*fr32.BytesNeeded])
+	node4 := *(*merkletree.Node)(data[3*fr32.BytesNeeded : 4*fr32.BytesNeeded])
+	return node1, node2, node3, node4, nil
 }
 func MakeDataSegmentIdxWithChecksum(commDs *fr32.Fr32, offset uint64, size uint64, checksum *[ChecksumSize]byte) (SegmentDesc, error) {
 	en := SegmentDesc{
-		CommDs:   *(*merkletree.Node)(commDs),
-		Offset:   offset,
-		Size:     size,
-		Checksum: *checksum,
+		CommDs:              *(*merkletree.Node)(commDs),
+		Offset:              offset,
+		Size:                size,
+		RawSize:             size, // Default to size if not specified (v1 compatibility)
+		Multicodec:          MulticodecRaw,
+		MulticodecDependent: merkletree.Node{},
+		ACLType:             0,
+		ACLData:             0,
+		Reserved:            [7]byte{},
+		Checksum:            *checksum,
 	}
 	if err := en.Validate(); err != nil {
 		return SegmentDesc{}, xerrors.Errorf("input does not form a valid SegmentDesc: %w", err)
@@ -295,11 +411,22 @@ func MakeDataSegmentIdxWithChecksum(commDs *fr32.Fr32, offset uint64, size uint6
 }
 
 func MakeDataSegmentIndexEntry(CommP *fr32.Fr32, offset uint64, size uint64) (*SegmentDesc, error) {
+	return MakeDataSegmentIndexEntryV2(CommP, offset, size, size, MulticodecRaw)
+}
+
+// MakeDataSegmentIndexEntryV2 creates a v2 index entry with all fields
+func MakeDataSegmentIndexEntryV2(CommP *fr32.Fr32, offset uint64, size uint64, rawSize uint64, multicodec uint64) (*SegmentDesc, error) {
 	en := SegmentDesc{
-		CommDs:   *(*merkletree.Node)(CommP),
-		Offset:   offset,
-		Size:     size,
-		Checksum: [ChecksumSize]byte{},
+		CommDs:              *(*merkletree.Node)(CommP),
+		Offset:              offset,
+		Size:                size,
+		RawSize:             rawSize,
+		Multicodec:          multicodec,
+		MulticodecDependent: merkletree.Node{},
+		ACLType:             0,
+		ACLData:             0,
+		Reserved:            [7]byte{},
+		Checksum:            [ChecksumSize]byte{},
 	}
 	en.Checksum = en.computeChecksum()
 	return &en, nil
@@ -318,7 +445,7 @@ func MakeSegDescs(segments []merkletree.Node, segmentSizes []uint64) ([]merkletr
 	if len(segments) != len(segmentSizes) {
 		return nil, xerrors.New("number of segment roots and segment sizes has to match")
 	}
-	res := make([]merkletree.Node, 2*len(segments))
+	res := make([]merkletree.Node, 4*len(segments))
 	curOffset := uint64(0)
 	for i, segment := range segments {
 		s := fr32.Fr32(segment)
@@ -328,12 +455,14 @@ func MakeSegDescs(segments []merkletree.Node, segmentSizes []uint64) ([]merkletr
 		if err != nil {
 			return nil, err
 		}
-		node1, node2, errNode := currentDesc.MakeNode()
+		node1, node2, node3, node4, errNode := currentDesc.MakeNode()
 		if errNode != nil {
 			return nil, errNode
 		}
-		res[2*i] = node1
-		res[2*i+1] = node2
+		res[4*i] = node1
+		res[4*i+1] = node2
+		res[4*i+2] = node3
+		res[4*i+3] = node4
 		curOffset += 1 << util.Log2Ceil(segmentSizes[i])
 	}
 	return res, nil
@@ -351,21 +480,10 @@ func SegmentRoot(treeDepth int, segmentSize uint64, segmentOffset uint64) (int, 
 
 // serializeFr32Entry uses a buffer to serialize en SegmentDesc into a byte slice
 func serializeFr32Entry(buf *bytes.Buffer, entry *SegmentDesc) error {
-	err := binary.Write(buf, binary.LittleEndian, entry.CommDs)
+	serialized := entry.SerializeFr32()
+	_, err := buf.Write(serialized)
 	if err != nil {
-		return xerrors.Errorf("writing CommD: %w", err)
-	}
-	err = binary.Write(buf, binary.LittleEndian, uint64(entry.Offset))
-	if err != nil {
-		return xerrors.Errorf("writing Offset: %w", err)
-	}
-	err = binary.Write(buf, binary.LittleEndian, uint64(entry.Size))
-	if err != nil {
-		return xerrors.Errorf("writing Size: %w", err)
-	}
-	err = binary.Write(buf, binary.LittleEndian, entry.Checksum)
-	if err != nil {
-		return xerrors.Errorf("writing Checksum: %w", err)
+		return xerrors.Errorf("writing SegmentDesc: %w", err)
 	}
 	return nil
 }
@@ -424,33 +542,29 @@ func validateEntry(en *SegmentDesc) error {
 }
 
 func computeChecksum(commDs *merkletree.Node, offset uint64, size uint64) (*[ChecksumSize]byte, error) {
+	return computeChecksumV2(commDs, offset, size, size, MulticodecRaw, merkletree.Node{}, 0, 0, [7]byte{})
+}
 
-	buf := new(bytes.Buffer)
+// computeChecksumV2 computes checksum for v2 entry with all fields
+func computeChecksumV2(commDs *merkletree.Node, offset uint64, size uint64, rawSize uint64, multicodec uint64, multicodecDependent merkletree.Node, aclType uint8, aclData uint64, reserved [7]byte) (*[ChecksumSize]byte, error) {
 	tempEntry := SegmentDesc{
-		CommDs:   *(*merkletree.Node)(commDs),
-		Offset:   offset,
-		Size:     size,
-		Checksum: [16]byte{},
+		CommDs:              *commDs,
+		Offset:              offset,
+		Size:                size,
+		RawSize:             rawSize,
+		Multicodec:          multicodec,
+		MulticodecDependent: multicodecDependent,
+		ACLType:             aclType,
+		ACLData:             aclData,
+		Reserved:            reserved,
+		Checksum:            [ChecksumSize]byte{},
 	}
 	checkSum := tempEntry.computeChecksum()
-	err := serializeFr32Entry(buf, &tempEntry)
-	if err != nil {
-		return nil, xerrors.Errorf("serailising entry: %w", err)
-	}
-	// We want to hash the SegmentDesc, excluding the computeChecksum as it is what we are trying to compute
-	toHash := buf.Bytes()[:EntrySize]
-	digest := sha256.Sum256(toHash)
-	res := digest[:ChecksumSize]
-	// Reduce the size to 126 bits
-	res[ChecksumSize-1] &= 0b00111111
-	if *(*[ChecksumSize]byte)(res) != checkSum {
-		panic("wrong checksum")
-	}
-	return (*[ChecksumSize]byte)(res), nil
+	return &checkSum, nil
 }
 
 func validateChecksum(en *SegmentDesc) (bool, error) {
-	refChecksum, err := computeChecksum(&(en.CommDs), en.Offset, en.Size)
+	refChecksum, err := computeChecksumV2(&(en.CommDs), en.Offset, en.Size, en.RawSize, en.Multicodec, en.MulticodecDependent, en.ACLType, en.ACLData, en.Reserved)
 	if err != nil {
 		return false, xerrors.Errorf("computing checksum: %w", err)
 	}
