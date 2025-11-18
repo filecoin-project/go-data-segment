@@ -69,7 +69,7 @@ func (ip InclusionProof) ComputeExpectedAuxData(veriferData InclusionVerifierDat
 	//  7. Check if DataSegmentIndexEntry falls into the correct area.
 	//	8. Compute second assumed aggregator's deal size.
 	//	9. Compare deal sizes and commitments from steps 2+3 against steps 5+6. Fail if not equal.
-	//	10. Return the computed values of aggregator's Commitment and Size as AuxData.
+	//	10. Return the computed values of aggregator's Commitment and NumEntries as AuxData.
 
 	if !util.IsPow2(uint64(veriferData.SizePc)) {
 		return nil, xerrors.Errorf("size of piece provided by verifier is not power of two")

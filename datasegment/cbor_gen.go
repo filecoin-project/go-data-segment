@@ -437,7 +437,7 @@ func (t *SegmentDesc) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.Size (uint64) (uint64)
+	// t.NumEntries (uint64) (uint64)
 
 	if err := cw.WriteMajorTypeHeader(cbg.MajUnsignedInt, uint64(t.Size)); err != nil {
 		return err
@@ -518,7 +518,7 @@ func (t *SegmentDesc) UnmarshalCBOR(r io.Reader) (err error) {
 		t.Offset = uint64(extra)
 
 	}
-	// t.Size (uint64) (uint64)
+	// t.NumEntries (uint64) (uint64)
 
 	{
 

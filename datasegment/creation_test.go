@@ -51,7 +51,10 @@ func TestAggregateCreation(t *testing.T) {
 		assert.NoError(t, err)
 		parsedValidEntries, err := parsedIndex.ValidEntries()
 		assert.NoError(t, err)
-		assert.Equal(t, a.Index.Entries, parsedValidEntries)
+		// Convert interface to IndexData to access Entries
+		indexData, ok := a.Index.(*IndexData)
+		require.True(t, ok, "Index should be *IndexData")
+		assert.Equal(t, indexData.Entries, parsedValidEntries)
 	})
 
 	for _, pi := range subPieceInfos {
@@ -241,7 +244,10 @@ func TestAggregateSample(t *testing.T) {
 	require.NoError(t, err)
 
 	{
-		_, err = f.Seek(int64(a.Index.Entries[0].UnpaddedOffest()), io.SeekStart)
+		// Convert interface to IndexData to access Entry
+		indexData, ok := a.Index.(*IndexData)
+		require.True(t, ok, "Index should be *IndexData")
+		_, err = f.Seek(int64(indexData.Entry(0).UnpaddedOffest()), io.SeekStart)
 		require.NoError(t, err)
 		p0, err := os.Open("testdata/sample_aggregate/cat.png.car")
 		require.NoError(t, err)
@@ -251,7 +257,10 @@ func TestAggregateSample(t *testing.T) {
 	{
 		p1, err := os.Open("testdata/sample_aggregate/Verifiable Data Aggregation.png.car")
 		require.NoError(t, err)
-		_, err = f.Seek(int64(a.Index.Entries[1].UnpaddedOffest()), io.SeekStart)
+		// Convert interface to IndexData to access Entry
+		indexData, ok := a.Index.(*IndexData)
+		require.True(t, ok, "Index should be *IndexData")
+		_, err = f.Seek(int64(indexData.Entry(1).UnpaddedOffest()), io.SeekStart)
 		require.NoError(t, err)
 		_, err = io.Copy(f, p1)
 		require.NoError(t, err)
@@ -277,13 +286,19 @@ func TestAggregateSample(t *testing.T) {
 		indexStart := DataSegmentIndexStartOffset(dealSize)
 		f.Seek(int64(indexStart), io.SeekStart)
 
-		indexData, err := ParseDataSegmentIndex(f)
+		parsedIndexData, err := ParseDataSegmentIndex(f)
 		require.NoError(t, err)
-		assert.Equal(t, Must(a.Index.ValidEntries()), Must(indexData.ValidEntries()))
+		// Convert interface to IndexData to access ValidEntries
+		indexData, ok := a.Index.(*IndexData)
+		require.True(t, ok, "Index should be *IndexData")
+		assert.Equal(t, Must(indexData.ValidEntries()), Must(parsedIndexData.ValidEntries()))
 	}
 	indexJson, err := os.Create("testdata/sample_aggregate/index.json")
 	require.NoError(t, err)
-	entries, err := a.Index.ValidEntries()
+	// Convert interface to IndexData to access ValidEntries
+	indexData, ok := a.Index.(*IndexData)
+	require.True(t, ok, "Index should be *IndexData")
+	entries, err := indexData.ValidEntries()
 	require.NoError(t, err)
 
 	enc := json.NewEncoder(indexJson)

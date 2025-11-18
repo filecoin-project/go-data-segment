@@ -76,11 +76,12 @@ func TestComputeExpectedAuxData1(t *testing.T) {
 	var SizePa abi.PaddedPieceSize = 32 << 30
 	ht, col := buildDealTree(t, SizePa, sampleSizes1)
 
-	index, err := MakeIndexFromCommLoc(col)
-
+	index := &IndexData{}
+	err := index.InitFromDeals(col)
 	require.NoError(t, err)
 	indexStartNodes := indexAreaStart(SizePa) / merkletree.NodeSize
-	for i, e := range index.Entries {
+	for i := 0; i < index.NumEntries(); i++ {
+		e := index.Entry(i)
 		ns := e.IntoNodes()
 		// v2: each entry consists of 4 nodes
 		err := ht.SetNode(0, indexStartNodes+4*uint64(i), &ns[0])

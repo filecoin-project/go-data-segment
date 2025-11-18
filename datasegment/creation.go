@@ -17,7 +17,7 @@ import (
 
 type Aggregate struct {
 	DealSize abi.PaddedPieceSize
-	Index    IndexData
+	Index    PieceIndex
 	Tree     merkletree.Hybrid
 }
 
@@ -51,14 +51,16 @@ func NewAggregate(dealSize abi.PaddedPieceSize, subdeals []abi.PieceInfo) (*Aggr
 	if err != nil {
 		return nil, xerrors.Errorf("batch set of deal nodes failed: %w", err)
 	}
-	index, err := MakeIndexFromCommLoc(cl)
+	index := &IndexData{}
+	err = index.InitFromDeals(cl)
 	if err != nil {
 		return nil, xerrors.Errorf("failed creating index: %w", err)
 	}
 
 	indexStartNodes := indexAreaStart(dealSize) / merkletree.NodeSize
-	batch := make([]merkletree.CommAndLoc, 4*len(index.Entries))
-	for i, e := range index.Entries {
+	batch := make([]merkletree.CommAndLoc, 4*index.NumEntries())
+	for i := 0; i < index.NumEntries(); i++ {
+		e := index.Entry(i)
 		ns := e.IntoNodes()
 		batch[4*i] = merkletree.CommAndLoc{
 			Comm: ns[0],
@@ -84,7 +86,7 @@ func NewAggregate(dealSize abi.PaddedPieceSize, subdeals []abi.PieceInfo) (*Aggr
 
 	agg := Aggregate{
 		DealSize: dealSize,
-		Index:    *index,
+		Index:    index,
 		Tree:     ht,
 	}
 
@@ -94,28 +96,27 @@ func NewAggregate(dealSize abi.PaddedPieceSize, subdeals []abi.PieceInfo) (*Aggr
 // ProofForPieceInfo searches for piece within the Aggregate based on PieceInfo and gathers all the
 // information required to produce a proof.
 func (a Aggregate) ProofForPieceInfo(d abi.PieceInfo) (*InclusionProof, error) {
-	comm, err := commcid.CIDToPieceCommitmentV1(d.PieceCID)
-	if err != nil {
-		return nil, xerrors.Errorf("convering cid to commitment: %w", err)
-	}
-	index := -1
-	for i, ie := range a.Index.Entries {
-		if bytes.Equal(ie.CommDs[:], comm) && ie.Size == uint64(d.Size) {
-			index = i
-			break
-		}
-	}
-	if index == -1 {
+	idx := a.Index.Search(d.PieceCID)
+	if idx == -1 {
 		return nil, xerrors.Errorf("entry for a piece with this PieceInfo was not found in Aggregate")
 	}
 
-	return a.ProofForIndexEntry(index)
+	// Verify the size matches as well
+	entry := a.Index.Entry(idx)
+	if entry == nil {
+		return nil, xerrors.Errorf("entry at index %d is nil", idx)
+	}
+	if entry.Size != uint64(d.Size) {
+		return nil, xerrors.Errorf("entry found but size mismatch: %d != %d", entry.Size, d.Size)
+	}
+
+	return a.ProofForIndexEntry(idx)
 }
 
 // ProofForIndexEntry gathers information required to produce an InclusionProof based on the index
 // of data within the DataSegment Index.
 func (a Aggregate) ProofForIndexEntry(idx int) (*InclusionProof, error) {
-	e := a.Index.Entries[idx]
+	e := a.Index.Entry(idx)
 	commLoc := e.CommAndLoc()
 	ip, err := CollectInclusionProof(&a.Tree, a.DealSize, commLoc, idx)
 	if err != nil {
@@ -189,8 +190,8 @@ func (a Aggregate) IndexSize() (abi.PaddedPieceSize, error) {
 // of the Aggregate.
 // AggregateStreamReader assumes a non-manipulated Index as created by the Aggregate constructor.
 func (a Aggregate) AggregateObjectReader(subPieceReaders []io.Reader) (io.Reader, error) {
-	if len(subPieceReaders) != len(a.Index.Entries) {
-		return nil, xerrors.Errorf("passed different number of subPieceReaders than subPieces: %d != %d", len(subPieceReaders), len(a.Index.Entries))
+	if len(subPieceReaders) != a.Index.NumEntries() {
+		return nil, xerrors.Errorf("passed different number of subPieceReaders than subPieces: %d != %d", len(subPieceReaders), a.Index.NumEntries())
 	}
 	readers := []io.Reader{}
 	add := func(r ...io.Reader) {
@@ -215,7 +216,7 @@ func (a Aggregate) AggregateObjectReader(subPieceReaders []io.Reader) (io.Reader
 
 	var errs error
 	for i := 0; i < len(subPieceReaders); i++ {
-		spEntry := a.Index.Entries[i]
+		spEntry := a.Index.Entry(i)
 		spOffset := spEntry.UnpaddedOffest()
 		spLen := spEntry.UnpaddedLength()
 
@@ -255,7 +256,7 @@ func (a Aggregate) AggregateObjectReader(subPieceReaders []io.Reader) (io.Reader
 	return io.MultiReader(readers...), nil
 }
 
-// ComputeDealPlacement takes in PieceInfos with Comm and Size,
+// ComputeDealPlacement takes in PieceInfos with Comm and NumEntries,
 // computes their placement in the tree and them in form of merkletree.CommAndLoc
 // also returns number of bytes required and any errors
 func ComputeDealPlacement(dealInfos []abi.PieceInfo) ([]merkletree.CommAndLoc, uint64, error) {

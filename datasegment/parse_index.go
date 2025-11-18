@@ -15,7 +15,7 @@ import (
 func DataSegmentIndexStartOffset(dealSize abi.PaddedPieceSize) uint64 {
 	mie := MaxIndexEntriesInDeal(dealSize)
 	fromBack := uint64(mie) * uint64(EntrySize)
-	fromBack = fromBack - fromBack/128 // safe because EntrySize = 256 and min(MaxIndexEntriesInDeal(x)) = 4
+	fromBack = fromBack - fromBack/128 // safe because EntrySize = 128 (which is a multiple of 128) and min(MaxIndexEntriesInDeal(x)) = 4
 	return uint64(dealSize.Unpadded()) - fromBack
 }
 
@@ -67,30 +67,27 @@ func ParseDataSegmentIndex(unpaddedReader io.Reader) (IndexData, error) {
 	wg.Wait()
 
 	// Decode entries
-	// MarshalBinary() returns EntrySize (256 bytes) per entry in post-Fr32 format
-	// IndexReader() unpads the entire block: 256 bytes -> 254 bytes per entry
-	// So we need to pad back to 256 bytes per entry to unmarshal
-	unpaddedEntrySize := (uint64(EntrySize) / 128) * 127 // 2 * 127 = 254 bytes
+	// MarshalBinary() returns EntrySize (128 bytes) per entry
+	// IndexReader() unpads the entire block: 128 bytes -> 127 bytes per entry (after Fr32 unpadding)
+	// So we need to pad back to 128 bytes per entry to unmarshal
+	unpaddedEntrySize := (uint64(EntrySize) / 128) * 127 // (128 / 128) * 127 = 1 * 127 = 127 bytes
 	numEntries := uint64(len(unpaddedData)) / unpaddedEntrySize
-	
+
 	// Pre-allocate entries slice to hold all entries (including zero-filled ones)
 	allEntries := make([]SegmentDesc, numEntries)
-	
-	// Each entry spans 2 padded chunks (256 bytes = 2 * 128)
-	// After unpadding: 254 bytes = 2 * 127
-	// After repadding: 256 bytes = 2 * 128
+
 	for i := uint64(0); i < numEntries; i++ {
-		// Each entry in unpadded format is 254 bytes (2 * 127)
-		// After Fr32 padding, it becomes 256 bytes (2 * 128)
+		// Each entry in unpadded format is 127 bytes (1 * 127)
+		// After Fr32 padding, it becomes 128 bytes (1 * 128) = EntrySize
 		// The paddedData already contains the correctly padded entries
-		entryStartPadded := i * EntrySize // Each entry is EntrySize (256) bytes after padding
+		entryStartPadded := i * EntrySize // Each entry is EntrySize (128) bytes after padding
 		if entryStartPadded+EntrySize > uint64(len(paddedData)) {
 			// Not enough padded data, leave as zero value
 			continue
 		}
-		
+
 		entryData := paddedData[entryStartPadded : entryStartPadded+EntrySize]
-		
+
 		// Always try to unmarshal, even if it might be zero-filled
 		// ValidEntries() will filter out invalid ones
 		if err := allEntries[i].UnmarshalBinary(entryData); err != nil {

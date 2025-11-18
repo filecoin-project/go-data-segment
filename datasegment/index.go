@@ -20,6 +20,16 @@ import (
 	"golang.org/x/xerrors"
 )
 
+type PieceIndex interface {
+	InitFromDeals(dealInfos []merkletree.CommAndLoc) error
+	NumEntries() int
+	Entry(idx int) *SegmentDesc
+	Search(cid cid.Cid) int
+
+	encoding.BinaryMarshaler
+	encoding.BinaryUnmarshaler
+}
+
 type validationError string
 
 var ErrValidation = validationError("unknown")
@@ -36,9 +46,9 @@ func (ve validationError) Is(err error) bool {
 const ChecksumSize = 16
 
 // EntrySize is the size of a Data Segment Index Entry v2
-// v2 entries are 256 bytes after Fr32 padding (4 nodes of 32 bytes each)
-// Pre-Fr32 size is 4 * 32 = 128 bytes, but we use 256 bytes to align to boundary
-const EntrySize = 4 * merkletree.NodeSize // 256 bytes (4 nodes)
+// v2 entries consist of 4 Merkle nodes (4 * 32 = 128 bytes)
+// This is the serialized size in memory (padded format, aligned to 128-byte boundaries).
+const EntrySize = 4 * merkletree.NodeSize // 128 bytes (4 nodes of 32 bytes each)
 
 // Multicodec values
 const (
@@ -59,17 +69,10 @@ type IndexData struct {
 	Entries []SegmentDesc
 }
 
-func MakeIndex(entries []SegmentDesc) (*IndexData, error) {
-	index := IndexData{
-		Entries: entries,
-	}
-	if err := validateIndexStructure(&index); err != nil {
-		return nil, xerrors.Errorf("input data is invalid: %w", err)
-	}
-	return &index, nil
-}
+var _ PieceIndex = (*IndexData)(nil)
 
-func MakeIndexFromCommLoc(dealInfos []merkletree.CommAndLoc) (*IndexData, error) {
+// InitFromDeals initializes the index from deal information
+func (id *IndexData) InitFromDeals(dealInfos []merkletree.CommAndLoc) error {
 	entries := make([]SegmentDesc, 0, len(dealInfos))
 	for _, di := range dealInfos {
 		size := 1 << di.Loc.Level * merkletree.NodeSize
@@ -88,22 +91,41 @@ func MakeIndexFromCommLoc(dealInfos []merkletree.CommAndLoc) (*IndexData, error)
 		sd.Checksum = sd.computeChecksum()
 		entries = append(entries, sd)
 	}
-	return &IndexData{Entries: entries}, nil
+	id.Entries = entries
+	return nil
 }
 
-// NumberEntries returns the number of entries
-func (i IndexData) NumberEntries() int {
-	return len(i.Entries)
+// NumEntries returns the number of entries in the index
+func (id IndexData) NumEntries() int {
+	return len(id.Entries)
+}
+
+// Entry returns the segment description at the given index
+func (id IndexData) Entry(idx int) *SegmentDesc {
+	if idx < 0 || idx >= len(id.Entries) {
+		return nil
+	}
+	return &id.Entries[idx]
+}
+
+// Search finds the index of a segment by its PieceCID
+// Returns -1 if not found
+func (id IndexData) Search(c cid.Cid) int {
+	comm, err := commcid.CIDToPieceCommitmentV1(c)
+	if err != nil {
+		return -1
+	}
+	for i, e := range id.Entries {
+		if bytes.Equal(e.CommDs[:], comm[:]) {
+			return i
+		}
+	}
+	return -1
 }
 
 // IndexSize returns the size of the index. Defined to be number of entries * 64 bytes
 func (i IndexData) IndexSize() uint64 {
-	return uint64(i.NumberEntries()) * uint64(EntrySize)
-}
-
-// SegmentDesc returns the SegmentDesc in position of index. 0-indexed
-func (i IndexData) SegmentDesc(index int) *SegmentDesc {
-	return &i.Entries[index]
+	return uint64(i.NumEntries()) * uint64(EntrySize)
 }
 
 var _ encoding.BinaryMarshaler = IndexData{}
@@ -251,7 +273,7 @@ func (sd *SegmentDesc) UnmarshalBinary(data []byte) error {
 	// Node 1: CommDS (32 bytes)
 	sd.CommDs = *(*merkletree.Node)(data[:merkletree.NodeSize])
 
-	// Node 2: Offset (8 bytes) + Size (8 bytes) + RawSize (8 bytes, but only 62 bits used) + Multicodec (8 bytes)
+	// Node 2: Offset (8 bytes) + NumEntries (8 bytes) + RawSize (8 bytes, but only 62 bits used) + Multicodec (8 bytes)
 	offset := merkletree.NodeSize
 	sd.Offset = le.Uint64(data[offset:])
 	offset += 8
@@ -275,6 +297,8 @@ func (sd *SegmentDesc) UnmarshalBinary(data []byte) error {
 	offset += 7
 	copy(sd.Checksum[:], data[offset:offset+ChecksumSize])
 
+	// Don't validate here - let the caller decide whether to validate
+	// This allows unmarshaling invalid entries for testing purposes
 	return nil
 }
 
@@ -296,7 +320,7 @@ func (sd SegmentDesc) SerializeFr32Into(slice []byte) {
 	copy(slice[offset:], sd.CommDs[:])
 	offset += merkletree.NodeSize
 
-	// Node 2: Offset (8 bytes) + Size (8 bytes) + RawSize (8 bytes, 62 bits used) + Multicodec (8 bytes)
+	// Node 2: Offset (8 bytes) + NumEntries (8 bytes) + RawSize (8 bytes, 62 bits used) + Multicodec (8 bytes)
 	le.PutUint64(slice[offset:], sd.Offset)
 	offset += 8
 	le.PutUint64(slice[offset:], sd.Size)
@@ -321,14 +345,35 @@ func (sd SegmentDesc) SerializeFr32Into(slice []byte) {
 	copy(slice[offset:], sd.Checksum[:])
 }
 
+// IntoNodes converts the SegmentDesc directly into 4 Merkle nodes without intermediate allocation
+// This avoids the overhead of SerializeFr32() which allocates a 256-byte buffer
 func (sd SegmentDesc) IntoNodes() [4]merkletree.Node {
-	res := sd.SerializeFr32()
-	return [4]merkletree.Node{
-		*(*merkletree.Node)(res[:merkletree.NodeSize]),
-		*(*merkletree.Node)(res[merkletree.NodeSize : 2*merkletree.NodeSize]),
-		*(*merkletree.Node)(res[2*merkletree.NodeSize : 3*merkletree.NodeSize]),
-		*(*merkletree.Node)(res[3*merkletree.NodeSize : 4*merkletree.NodeSize]),
-	}
+	var nodes [4]merkletree.Node
+	le := binary.LittleEndian
+
+	// Node 1: CommDS (32 bytes) - direct copy
+	nodes[0] = sd.CommDs
+
+	// Node 2: Offset (8) + Size (8) + RawSize (8, 62 bits) + Multicodec (8) = 32 bytes
+	var node2 [32]byte
+	le.PutUint64(node2[0:], sd.Offset)
+	le.PutUint64(node2[8:], sd.Size)
+	le.PutUint64(node2[16:], sd.RawSize&0x3FFFFFFFFFFFFFFF) // Mask to 62 bits
+	le.PutUint64(node2[24:], sd.Multicodec)
+	nodes[1] = merkletree.Node(node2)
+
+	// Node 3: MulticodecDependent (32 bytes) - direct copy
+	nodes[2] = sd.MulticodecDependent
+
+	// Node 4: ACLType (1) + ACLData (8) + Reserved (7) + Checksum (16) = 32 bytes
+	var node4 [32]byte
+	node4[0] = sd.ACLType
+	le.PutUint64(node4[1:], sd.ACLData)
+	copy(node4[9:], sd.Reserved[:])
+	copy(node4[16:], sd.Checksum[:])
+	nodes[3] = merkletree.Node(node4)
+
+	return nodes
 }
 
 func (sd SegmentDesc) Validate() error {
@@ -337,7 +382,7 @@ func (sd SegmentDesc) Validate() error {
 		return validationError("computed checksum does not match embedded checksum")
 	}
 
-	// Validate RawSize <= Size
+	// Validate RawSize <= NumEntries
 	if sd.RawSize > sd.Size {
 		return validationError("rawSize must be <= size")
 	}
@@ -367,7 +412,7 @@ func (sd SegmentDesc) Validate() error {
 		}
 	}
 
-	// Note: Offset and Size alignment checks removed for v2 as flexible alignment is allowed
+	// Note: Offset and NumEntries alignment checks removed for v2 as flexible alignment is allowed
 	// The specification recommends 127-byte alignment but allows arbitrary alignment
 
 	return nil
@@ -375,21 +420,11 @@ func (sd SegmentDesc) Validate() error {
 
 // ==============================
 
+// MakeNode converts SegmentDesc to 4 Merkle nodes
+// Optimized to use IntoNodes() directly, avoiding intermediate buffer allocation
 func (ds SegmentDesc) MakeNode() (merkletree.Node, merkletree.Node, merkletree.Node, merkletree.Node, error) {
-	buf := new(bytes.Buffer)
-	err := serializeFr32Entry(buf, &ds)
-	data := buf.Bytes()
-	if err != nil {
-		return merkletree.Node{}, merkletree.Node{}, merkletree.Node{}, merkletree.Node{}, err
-	}
-	if len(data) < 4*fr32.BytesNeeded {
-		return merkletree.Node{}, merkletree.Node{}, merkletree.Node{}, merkletree.Node{}, xerrors.Errorf("insufficient data for 4 nodes")
-	}
-	node1 := *(*merkletree.Node)(data[:fr32.BytesNeeded])
-	node2 := *(*merkletree.Node)(data[fr32.BytesNeeded : 2*fr32.BytesNeeded])
-	node3 := *(*merkletree.Node)(data[2*fr32.BytesNeeded : 3*fr32.BytesNeeded])
-	node4 := *(*merkletree.Node)(data[3*fr32.BytesNeeded : 4*fr32.BytesNeeded])
-	return node1, node2, node3, node4, nil
+	nodes := ds.IntoNodes()
+	return nodes[0], nodes[1], nodes[2], nodes[3], nil
 }
 func MakeDataSegmentIdxWithChecksum(commDs *fr32.Fr32, offset uint64, size uint64, checksum *[ChecksumSize]byte) (SegmentDesc, error) {
 	en := SegmentDesc{
@@ -455,14 +490,12 @@ func MakeSegDescs(segments []merkletree.Node, segmentSizes []uint64) ([]merkletr
 		if err != nil {
 			return nil, err
 		}
-		node1, node2, node3, node4, errNode := currentDesc.MakeNode()
-		if errNode != nil {
-			return nil, errNode
-		}
-		res[4*i] = node1
-		res[4*i+1] = node2
-		res[4*i+2] = node3
-		res[4*i+3] = node4
+		// Use IntoNodes() directly for better performance
+		nodes := currentDesc.IntoNodes()
+		res[4*i] = nodes[0]
+		res[4*i+1] = nodes[1]
+		res[4*i+2] = nodes[2]
+		res[4*i+3] = nodes[3]
 		curOffset += 1 << util.Log2Ceil(segmentSizes[i])
 	}
 	return res, nil
@@ -478,7 +511,8 @@ func SegmentRoot(treeDepth int, segmentSize uint64, segmentOffset uint64) (int, 
 	return lvl, idx
 }
 
-// serializeFr32Entry uses a buffer to serialize en SegmentDesc into a byte slice
+// serializeFr32Entry is deprecated - use SerializeFr32Into directly instead
+// This function is kept for backward compatibility but should not be used in new code
 func serializeFr32Entry(buf *bytes.Buffer, entry *SegmentDesc) error {
 	serialized := entry.SerializeFr32()
 	_, err := buf.Write(serialized)
@@ -502,24 +536,21 @@ func SerializeIndex(index *IndexData) ([]byte, error) {
 }
 
 // serializeIndex encodes a data segment Inclusion into a byte array without doing validation
+// Optimized to avoid intermediate allocations by directly writing to pre-allocated buffer
 func serializeIndex(index *IndexData) ([]byte, error) {
-	buf := new(bytes.Buffer)
-	for i := 0; i < index.NumberEntries(); i++ {
-		err := serializeFr32Entry(buf, index.SegmentDesc(i))
-		if err != nil {
-			log.Printf("could not write SegmentDesc %d\n", i)
-			return nil, xerrors.Errorf("could not write data segment (index %d): %w", i, err)
-		}
+	res := make([]byte, EntrySize*index.NumEntries())
+	for i := 0; i < index.NumEntries(); i++ {
+		index.Entry(i).SerializeFr32Into(res[i*EntrySize : (i+1)*EntrySize])
 	}
-	return buf.Bytes(), nil
+	return res, nil
 }
 
 func validateIndexStructure(index *IndexData) error {
 	if index == nil {
 		return xerrors.Errorf("index is nil")
 	}
-	if index.NumberEntries() <= 0 {
-		return xerrors.Errorf("number of deal entries must be positive, %d < 0", index.NumberEntries())
+	if index.NumEntries() <= 0 {
+		return xerrors.Errorf("number of deal entries must be positive, %d < 0", index.NumEntries())
 	}
 	for i, e := range index.Entries {
 		if err := validateEntry(&e); err != nil {
